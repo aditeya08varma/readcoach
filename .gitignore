@@ -1,0 +1,12 @@
+.env
+.env.local
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+.next/
+dist/
+build/
+.DS_Store
+mastery_dev.db
+*.db

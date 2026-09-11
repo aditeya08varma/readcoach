@@ -1,0 +1,49 @@
+ReadCoach Evaluation Benchmark - Summary
+==========================================
+Generated: 2026-09-11T13:02:27.961708+00:00
+
+DIAGNOSTIC ACCURACY (did the pipeline ID the injected skill/miscue correctly?)
+  Overall: 90.5%  (95/105 cases)
+  By category:
+    inflectional_endings         60.0%  (6/10)
+    open_syllables               66.7%  (6/9)
+    consonant_digraphs           75.0%  (6/8)
+    consonant_blends             90.0%  (9/10)
+    short_vowels                 100.0%  (8/8)
+    closed_syllables             100.0%  (8/8)
+    silent_e                     100.0%  (8/8)
+    vowel_teams                  100.0%  (8/8)
+    r_controlled_vowels          100.0%  (8/8)
+    diphthongs                   100.0%  (8/8)
+    compound_words               100.0%  (6/6)
+    multisyllabic_decoding       100.0%  (6/6)
+    miscue_type                  100.0%  (6/6)
+    repeated_word_stress_test    100.0%  (2/2)
+
+QUESTION GROUNDEDNESS (LLM-judge: is each generated question answerable from the passage text?)
+  Overall: 91.7%  (22/24 questions, 8 passages)
+  Ungrounded questions found:
+    [g1-short-vowels-001] "Why might the duck like Pat?" - The passage states 'The duck likes Pat' but does not provide any reason or explanation for why the duck likes Pat.
+    [g3-inferential-001] "How do you think the fox really felt about not getting the grapes?" - The question asks how the fox 'really felt,' which requires inferring internal emotions beyond what the text literally states about his actions and words.
+
+LATENCY (real Claude API calls, timed end-to-end through the real pipeline code)
+  Sessions run: 10
+
+  Per-call (what a real session actually waits for at any one moment):
+    llm_ms (pooled)         P50=2042ms  P95=2667ms
+    stt_ms                  P50=n/a  P95=n/a  (stt_ms/tts_ms unavailable: no real session in the sessions table has non-null pipeline_latency_ms yet (Deepgram/Cartesia stages are owned by voice-pipeline-engineer). llm_ms here is measured directly by this harness from real Claude API calls, pooled per individual call (hint/question-generation/grading) so it stays comparable to stt_ms/tts_ms - see session_total_llm_ms_percentiles for the separate, whole-session-summed figure.)
+    tts_ms                  P50=n/a  P95=n/a  (same note)
+  By stage:
+    hint_generation          P50=1152ms  P95=1403ms  n=10
+    question_generation      P50=2497ms  P95=3564ms  n=10
+    answer_grading           P50=2042ms  P95=2429ms  n=40
+
+  Whole-session total (every LLM call in one scripted session, summed back to back with none of a real session's own reading/thinking/speaking pauses between them - NOT what a session feels like, see per-call numbers above for that):
+    session_total_llm_ms    P50=11908ms  P95=13269ms
+
+FLAGS FOR THE ORCHESTRATOR
+  - api_contract.md's GET /admin/eval_report response shape was left unspecified beyond the three required top-level keys (diagnostic_accuracy, question_groundedness, latency_percentiles) - this implementation adds richer nested detail (by_category, ungrounded_examples, latency_by_stage_ms, per-session/per-passage breakdowns) beyond that minimum. Flagging in case frontend-engineer wants the contract tightened to a specific nested shape rather than left open.
+  - latency_percentiles.p50_ms/p95_ms.stt_ms and .tts_ms are reported as null: the real sessions table (backend/mastery/mastery_dev.db) has exactly one row so far, from the single manual integration test, and its pipeline_latency_ms column is null there too - no real STT/TTS timing data exists anywhere yet for this harness to read. Only llm_ms (the stage this harness's own real Claude calls can measure) is populated. Not fabricated to fill the field.
+  - RESOLVED (was: alignment.py's own module docstring cited 'jumped'/'panted' as words that resolve through the inflectional-endings suffix path, but they actually resolve to consonant_blends via their stems' final blend). This was a doc bug, not a code bug - classify_skill_for_word('jumped') == 'consonant_blends' was already the intended, tested behavior (tests/test_skills.py already asserted it). Fixed by correcting the docstring's example words in backend/tutor/skills.py to match reality (helped/filled for the pure-suffix case, barked/jumped for the stem-has-its-own-pattern case) rather than changing any classification logic.
+  - PARTIALLY RESOLVED (was: open_syllables at 11%, 1/9): classify_skill_for_word's open-syllable check used to only test whether the whole word's LAST letter is a vowel. Replaced with a VCV structural check (single medial consonant between two vowels, e.g. 'ti-ny', 'ro-bot') in backend/tutor/skills.py, verified against the full tutor-logic test suite (35/35 still passing) before and after. This category is now 66.7% (6/9). Three words remain known, deliberately unfixed gaps, each re-asserted explicitly in tests/test_skills.py so a future change notices if the behavior shifts: 'tiger'/'hero' are caught earlier by the r_controlled_vowels whole-word substring scan (same 'er' shape as a real same-syllable case like 'sister'), and 'apron' has a two-consonant medial blend ('pr') that's genuinely ambiguous without a pronouncing dictionary - the same blend shape closes the syllable in a short-vowel word ('bas-ket', 'gob-lin') but stays open in a long-vowel one ('a-pron', 'ze-bra'); an earlier, more aggressive version of this fix treated any medial blend as open and wrongly flipped 'basket'/'goblin' to open_syllables as a result, so that path was deliberately left out rather than traded for a new regression.
+

@@ -1,0 +1,18 @@
+# ReadCoach evaluation harness (backend/eval).
+#
+# `anthropic` is needed for two real-API-call touchpoints this harness owns:
+# (1) importing backend/tutor's claude_client.TutorLLMClient as-is to generate
+#     real comprehension questions and grade real answers (no reimplementation),
+#     and (2) this module's own LLM-judge call (judge_client.py) that scores
+#     question groundedness, built on the exact same AsyncAnthropic pattern
+#     backend/tutor/claude_client.py already established.
+# `python-dotenv` loads the real ANTHROPIC_API_KEY already configured in
+# backend/voice/.env (no new secrets created here).
+# `fastapi`/`uvicorn` serve GET /admin/eval_report per contracts/api_contract.md.
+anthropic>=0.40.0,<1.0.0
+python-dotenv>=1.0.0
+fastapi
+uvicorn[standard]
+
+pytest>=8.0.0
+pytest-asyncio>=0.24.0

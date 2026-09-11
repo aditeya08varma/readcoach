@@ -1,0 +1,10 @@
+# ReadCoach tutor logic (backend/tutor).
+#
+# The alignment engine (alignment.py, skills.py) is pure stdlib - no deps.
+# `anthropic` is only needed for the LLM-backed half (claude_client.py):
+# fast-tier hint generation and strong-tier comprehension question
+# generation/grading. pytest is dev-only, for the unit tests in tests/.
+anthropic>=0.40.0,<1.0.0
+
+pytest>=8.0.0
+pytest-asyncio>=0.24.0

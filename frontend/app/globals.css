@@ -1,0 +1,520 @@
+@import "tailwindcss";
+
+:root {
+  /* Soft warm neutral, not stark white - every real page now sets its own
+     full-length gradient background (see docs/BUILD_LOG.md), but on a
+     screen taller than a given page's real content, this is what shows
+     below it. A gentle, on-theme neutral reads as "the page finished
+     naturally" instead of "hit a wall of white". */
+  --background: #fdfaf5;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-kid: var(--font-baloo);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+@keyframes waveform {
+  0%,
+  100% {
+    height: 6px;
+  }
+  50% {
+    height: 26px;
+  }
+}
+
+/* Softened version of the old hard "pop": a gentle lift instead of a sharp
+   scale jump, so the current-word highlight reads as smooth motion rather
+   than a snap. */
+@keyframes word-pop {
+  0% {
+    transform: scale(1) translateY(0);
+  }
+  45% {
+    transform: scale(1.05) translateY(-1px);
+  }
+  100% {
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Voice indicator personality states. Each one is deliberately a distinct
+   motion, not just a recolor, so "listening" vs "speaking" vs "done" read as
+   different feelings at a glance for a young child. */
+@keyframes breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
+}
+
+@keyframes listen-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(56, 189, 248, 0);
+  }
+}
+
+@keyframes speak-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(167, 139, 250, 0.4);
+    transform: rotate(-2deg);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(167, 139, 250, 0);
+    transform: rotate(2deg);
+  }
+}
+
+@keyframes celebrate-pop {
+  0% {
+    transform: scale(0.85) rotate(0deg);
+  }
+  35% {
+    transform: scale(1.15) rotate(-6deg);
+  }
+  60% {
+    transform: scale(1.02) rotate(4deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes sparkle {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.6) translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1) translateY(-4px);
+  }
+}
+
+@keyframes bubble-in {
+  0% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fade-up {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Plump, pressable buttons - see components/ui/PlumpButton.tsx. A layered
+   box-shadow stands in for depth; pressing collapses it instead of using a
+   translateY+shadow-blur transition, which is what makes it read as a
+   squishy 3D press rather than a flat hover effect. --btn-shadow is set per
+   color variant below. */
+.btn-3d {
+  --btn-shadow: rgba(2, 6, 23, 0.25);
+  transform: translateY(0);
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+  box-shadow:
+    0 6px 0 var(--btn-shadow),
+    0 10px 18px rgba(2, 6, 23, 0.16);
+}
+.btn-3d:active:not(:disabled) {
+  transform: translateY(6px);
+  box-shadow:
+    0 0px 0 var(--btn-shadow),
+    0 3px 8px rgba(2, 6, 23, 0.14);
+}
+.btn-3d-amber {
+  --btn-shadow: #b45309;
+}
+.btn-3d-sky {
+  --btn-shadow: #0369a1;
+}
+.btn-3d-white {
+  --btn-shadow: #cbd5e1;
+}
+
+@keyframes btn-bounce {
+  0% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(1.08);
+  }
+  55% {
+    transform: scale(0.95);
+  }
+  80% {
+    transform: scale(1.03);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.btn-bounce {
+  animation: btn-bounce 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Hero decorative shapes on the home screen - see app/page.tsx. Slow,
+   staggered drift so the gradient band doesn't feel like a static banner. */
+@keyframes floaty {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-12px) rotate(8deg);
+  }
+}
+/* "You are here" marker on the story map's single recommended-next skill
+   (see StoryMapView.tsx) - a consistent amber glow regardless of that
+   card's own category color, deliberately tying to the home screen's
+   amber "Start Reading" button rather than blending into each category's
+   own accent, so it reads as one universal signal: "this is the one
+   tapping Start Reading will pick." */
+@keyframes here-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(245, 158, 11, 0);
+  }
+}
+/* The map's own path drawing itself in, top to bottom, node by node on
+   load - the single biggest thing separating a real skill-tree screen from
+   a static list is that the path feels like it unrolls in front of you.
+   Each node wrapper gets a per-index animation-delay set inline in
+   StoryMapView.tsx; this just defines the motion itself. */
+@keyframes path-step-in {
+  0% {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .floaty {
+    animation: floaty 6s ease-in-out infinite;
+  }
+  .here-pulse {
+    animation: here-pulse 2s ease-in-out infinite;
+  }
+  .path-step-in {
+    animation: path-step-in 0.5s ease-out both;
+  }
+}
+
+/* Reading screen's penguin mascot (components/reading/PenguinMascot.tsx) -
+   real feedback that the reading screen felt bland next to the rest of the
+   app. Each SVG part animates independently (transform-box: fill-box so
+   transform-origin works relative to that shape's own bounds, not the
+   whole SVG viewport) so the character reads as genuinely alive rather
+   than one flat icon being bounced as a whole. */
+@keyframes penguin-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+@keyframes penguin-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  96% {
+    transform: scaleY(0.1);
+  }
+}
+@keyframes penguin-tilt {
+  0%,
+  100% {
+    transform: rotate(-4deg);
+  }
+  50% {
+    transform: rotate(4deg);
+  }
+}
+@keyframes penguin-flipper-wave {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(-25deg);
+  }
+}
+@keyframes penguin-talk {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.35);
+  }
+}
+@keyframes penguin-jump {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  30% {
+    transform: translateY(-14px) rotate(-6deg);
+  }
+  60% {
+    transform: translateY(-14px) rotate(6deg);
+  }
+}
+.penguin-idle .penguin-body,
+.penguin-listening .penguin-body,
+.penguin-thinking .penguin-body,
+.penguin-speaking .penguin-body,
+.penguin-done .penguin-body {
+  transform-box: fill-box;
+}
+.penguin-idle .penguin-eyes,
+.penguin-listening .penguin-eyes {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.penguin-speaking .penguin-beak-lower {
+  transform-box: fill-box;
+}
+.penguin-done .penguin-flipper-left,
+.penguin-done .penguin-flipper-right {
+  transform-box: fill-box;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .penguin-idle .penguin-body {
+    animation: penguin-bob 3s ease-in-out infinite;
+  }
+  .penguin-idle .penguin-eyes {
+    animation: penguin-blink 4s ease-in-out infinite;
+  }
+  .penguin-listening .penguin-body {
+    animation: penguin-tilt 1.6s ease-in-out infinite;
+  }
+  .penguin-listening .penguin-eyes {
+    animation: penguin-blink 4s ease-in-out infinite;
+  }
+  .penguin-thinking .penguin-body {
+    animation: penguin-tilt 2.4s ease-in-out infinite;
+  }
+  .penguin-speaking .penguin-body {
+    animation: penguin-bob 0.6s ease-in-out infinite;
+  }
+  .penguin-speaking .penguin-beak-lower {
+    animation: penguin-talk 0.35s ease-in-out infinite;
+  }
+  .penguin-done .penguin-body {
+    animation: penguin-jump 0.6s ease-out 1;
+  }
+  .penguin-done .penguin-flipper-left {
+    animation: penguin-flipper-wave 0.4s ease-in-out 3;
+  }
+  .penguin-done .penguin-flipper-right {
+    animation: penguin-flipper-wave 0.4s ease-in-out 3 reverse;
+  }
+}
+
+/* The map's own trailside penguins (components/map/StoryMapView.tsx) - a
+   second, purely decorative set of poses, deliberately separate from the
+   voice-state ones above since "dancing" and "asleep" carry no real meaning
+   in the actual reading pipeline, only here. */
+/* Rotating this whole body around its own center looked like the character
+   toppling over, not dancing - the dance pose's own artwork is already
+   off-balance (one arm each way, a foot kicked out), so spinning that
+   asymmetric shape around a center point reads as losing its balance
+   rather than grooving. A side-to-side bounce - translate only, no rotate -
+   reads as an actual dance step instead.
+   Only 4 stops with the default ease-in-out meant velocity hit exactly
+   zero at every quarter-beat, a real stop-start stutter four times a
+   cycle rather than one continuous sway. Twice as many stops tracing a
+   proper sine-like path, paired with a linear timing function (set on the
+   class below, not here) so the motion between stops never itself eases
+   to a stop, is what actually reads as one smooth, continuous groove. */
+@keyframes penguin-dance {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  12.5% {
+    transform: translate(3px, -6px);
+  }
+  25% {
+    transform: translate(5px, -9px);
+  }
+  37.5% {
+    transform: translate(3px, -6px);
+  }
+  50% {
+    transform: translate(0, -1px);
+  }
+  62.5% {
+    transform: translate(-3px, -6px);
+  }
+  75% {
+    transform: translate(-5px, -9px);
+  }
+  87.5% {
+    transform: translate(-3px, -6px);
+  }
+}
+@keyframes penguin-sleep-breathe {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-2px) scale(1.015);
+  }
+}
+@keyframes pose-badge-float {
+  0% {
+    opacity: 0;
+    transform: translateY(2px) scale(0.85);
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-14px) scale(1.05);
+  }
+}
+.penguin-pose-wave .penguin-body,
+.penguin-pose-dance .penguin-body,
+.penguin-pose-sleep .penguin-body,
+.penguin-pose-sing .penguin-body {
+  transform-box: fill-box;
+}
+.penguin-pose-wave .penguin-flipper-right,
+.penguin-pose-dance .penguin-flipper-left,
+.penguin-pose-dance .penguin-flipper-right {
+  transform-box: fill-box;
+}
+.penguin-pose-sing .penguin-beak-lower {
+  transform-box: fill-box;
+}
+/* A permanently-closed eye is a resting state, not a motion, so it applies
+   regardless of reduced-motion preference - only the breathing animation
+   below is gated. */
+.penguin-pose-sleep .penguin-eyes {
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scaleY(0.12);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .penguin-pose-wave .penguin-body {
+    animation: penguin-bob 2s ease-in-out infinite;
+  }
+  .penguin-pose-wave .penguin-flipper-right {
+    animation: penguin-flipper-wave 1s ease-in-out infinite;
+  }
+  .penguin-pose-dance .penguin-body {
+    animation: penguin-dance 1.3s linear infinite;
+  }
+  .penguin-pose-dance .penguin-flipper-left {
+    animation: penguin-flipper-wave 1.1s ease-in-out infinite;
+  }
+  .penguin-pose-dance .penguin-flipper-right {
+    animation: penguin-flipper-wave 1.1s ease-in-out infinite reverse;
+  }
+  .penguin-pose-sleep .penguin-body {
+    animation: penguin-sleep-breathe 3.2s ease-in-out infinite;
+  }
+  .penguin-pose-sing .penguin-body {
+    animation: penguin-bob 0.6s ease-in-out infinite;
+  }
+  .penguin-pose-sing .penguin-beak-lower {
+    animation: penguin-talk 0.3s ease-in-out infinite;
+  }
+  .pose-badge {
+    animation: pose-badge-float 1.8s ease-in-out infinite;
+  }
+}
+
+@keyframes card-wiggle {
+  0%,
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+  20% {
+    transform: rotate(-6deg) scale(1.08);
+  }
+  45% {
+    transform: rotate(5deg) scale(1.08);
+  }
+  70% {
+    transform: rotate(-3deg) scale(1.05);
+  }
+}
+.group:hover .card-wiggle-icon {
+  animation: card-wiggle 0.5s ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-3d,
+  .btn-bounce,
+  .card-wiggle-icon,
+  .here-pulse,
+  .path-step-in,
+  .mastered-sparkle,
+  .penguin-idle .penguin-body,
+  .penguin-idle .penguin-eyes,
+  .penguin-listening .penguin-body,
+  .penguin-listening .penguin-eyes,
+  .penguin-thinking .penguin-body,
+  .penguin-speaking .penguin-body,
+  .penguin-speaking .penguin-beak-lower,
+  .penguin-done .penguin-body,
+  .penguin-done .penguin-flipper-left,
+  .penguin-done .penguin-flipper-right,
+  .penguin-pose-wave .penguin-body,
+  .penguin-pose-wave .penguin-flipper-right,
+  .penguin-pose-dance .penguin-body,
+  .penguin-pose-dance .penguin-flipper-left,
+  .penguin-pose-dance .penguin-flipper-right,
+  .penguin-pose-sleep .penguin-body,
+  .penguin-pose-sing .penguin-body,
+  .penguin-pose-sing .penguin-beak-lower,
+  .pose-badge {
+    transition: none !important;
+    animation: none !important;
+  }
+}

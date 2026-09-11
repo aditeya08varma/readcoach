@@ -1,0 +1,53 @@
+{
+  "id": "g1-short-vowels-001",
+  "grade": 1,
+  "title": "Pat and the Big Hat",
+  "source": "original",
+  "text": "Pat has a big hat. The hat is red. Pat runs to the pond. A duck sits on a log. Pat pets the duck. The duck likes Pat. Pat and the duck sit in the sun.",
+  "words": [
+    "Pat",
+    "has",
+    "a",
+    "big",
+    "hat",
+    "The",
+    "hat",
+    "is",
+    "red",
+    "Pat",
+    "runs",
+    "to",
+    "the",
+    "pond",
+    "A",
+    "duck",
+    "sits",
+    "on",
+    "a",
+    "log",
+    "Pat",
+    "pets",
+    "the",
+    "duck",
+    "The",
+    "duck",
+    "likes",
+    "Pat",
+    "Pat",
+    "and",
+    "the",
+    "duck",
+    "sit",
+    "in",
+    "the",
+    "sun"
+  ],
+  "skills": [
+    "short_vowels"
+  ],
+  "primary_skill": "short_vowels",
+  "comprehension_hint_topics": [
+    "what color the hat is",
+    "why the duck likes Pat"
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Passage",
+  "description": "A single leveled reading passage in the ReadCoach content library. Produced by content-curator; consumed by mastery-engineer (passage selection), tutor-logic-engineer (question grounding), and frontend-engineer (reading screen).",
+  "type": "object",
+  "required": ["id", "grade", "title", "text", "skills", "words"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Stable unique id, e.g. \"g2-blends-003\""
+    },
+    "grade": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3,
+      "description": "Target grade band for this passage (scope is grades 1-3)"
+    },
+    "title": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string",
+      "description": "Attribution for public-domain source text, or \"original\" if authored for this project"
+    },
+    "text": {
+      "type": "string",
+      "description": "Full passage text, plain prose, no markup. Sentence boundaries matter for comprehension question generation."
+    },
+    "words": {
+      "type": "array",
+      "description": "Pre-tokenized reference words in reading order, exactly matching `text` split on whitespace/punctuation. This is what the alignment engine (backend/tutor) diffs the live transcript against, so it must be produced deterministically from `text`.",
+      "items": { "type": "string" }
+    },
+    "skills": {
+      "type": "array",
+      "description": "Skill ids from the taxonomy (see content/skill_taxonomy.json) that this passage exercises/targets. Must be a non-empty subset of taxonomy skill ids.",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "primary_skill": {
+      "type": "string",
+      "description": "The single skill id this passage was chosen/written to reinforce most. Used by mastery-engineer's passage-selection rule. Must be included in `skills`."
+    },
+    "comprehension_hint_topics": {
+      "type": "array",
+      "description": "Optional: 1-3 short phrases flagging what a literal vs. inferential comprehension question could probe (e.g. \"why the fox was hungry\"). Advisory only for tutor-logic-engineer's question generation, not authoritative.",
+      "items": { "type": "string" }
+    }
+  }
+}

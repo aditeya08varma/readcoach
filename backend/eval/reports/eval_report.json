@@ -1,0 +1,454 @@
+{
+  "generated_at": "2026-09-11T13:02:27.961708+00:00",
+  "diagnostic_accuracy": 0.9048,
+  "question_groundedness": 0.9167,
+  "latency_percentiles": {
+    "p50_ms": {
+      "stt_ms": null,
+      "llm_ms": 2042.3,
+      "tts_ms": null
+    },
+    "p95_ms": {
+      "stt_ms": null,
+      "llm_ms": 2667.1,
+      "tts_ms": null
+    }
+  },
+  "diagnostic_accuracy_detail": {
+    "sample_size": 105,
+    "passed": 95,
+    "accuracy": 0.9048,
+    "by_category": {
+      "short_vowels": {
+        "total": 8,
+        "passed": 8,
+        "failures": [],
+        "accuracy": 1.0
+      },
+      "consonant_blends": {
+        "total": 10,
+        "passed": 9,
+        "failures": [
+          {
+            "case_id": "sub-012-splash",
+            "expected_miscue_type": "substitution",
+            "actual_miscue_type": "substitution",
+            "expected_skill_id": "consonant_blends",
+            "actual_skill_id": "consonant_digraphs",
+            "note": ""
+          }
+        ],
+        "accuracy": 0.9
+      },
+      "consonant_digraphs": {
+        "total": 8,
+        "passed": 6,
+        "failures": [
+          {
+            "case_id": "sub-022-chirps",
+            "expected_miscue_type": "substitution",
+            "actual_miscue_type": "substitution",
+            "expected_skill_id": "consonant_digraphs",
+            "actual_skill_id": "r_controlled_vowels",
+            "note": ""
+          },
+          {
+            "case_id": "sub-024-whale",
+            "expected_miscue_type": "substitution",
+            "actual_miscue_type": "substitution",
+            "expected_skill_id": "consonant_digraphs",
+            "actual_skill_id": "silent_e",
+            "note": ""
+          }
+        ],
+        "accuracy": 0.75
+      },
+      "closed_syllables": {
+        "total": 8,
+        "passed": 8,
+        "failures": [],
+        "accuracy": 1.0
+      },
+      "silent_e": {
+        "total": 8,
+        "passed": 8,
+        "failures": [],
+        "accuracy": 1.0
+      },
+      "vowel_teams": {
+        "total": 8,
+        "passed": 8,
+        "failures": [],
+        "accuracy": 1.0
+      },
+      "r_controlled_vowels": {
+        "total": 8,
+        "passed": 8,
+        "failures": [],
+        "accuracy": 1.0
+      },
+      "diphthongs": {
+        "total": 8,
+        "passed": 8,
+        "failures": [],
+        "accuracy": 1.0
+      },
+      "open_syllables": {
+        "total": 9,
+        "passed": 6,
+        "failures": [
+          {
+            "case_id": "sub-067-tiger",
+            "expected_miscue_type": "substitution",
+            "actual_miscue_type": "substitution",
+            "expected_skill_id": "open_syllables",
+            "actual_skill_id": "r_controlled_vowels",
+            "note": ""
+          },
+          {
+            "case_id": "sub-069-hero",
+            "expected_miscue_type": "substitution",
+            "actual_miscue_type": "substitution",
+            "expected_skill_id": "open_syllables",
+            "actual_skill_id": "r_controlled_vowels",
+            "note": ""
+          },
+          {
+            "case_id": "sub-071-apron",
+            "expected_miscue_type": "substitution",
+            "actual_miscue_type": "substitution",
+            "expected_skill_id": "open_syllables",
+            "actual_skill_id": "closed_syllables",
+            "note": ""
+          }
+        ],
+        "accuracy": 0.6667
+      },
+      "inflectional_endings": {
+        "total": 10,
+        "passed": 6,
+        "failures": [
+          {
+            "case_id": "sub-075-jumps",
+            "expected_miscue_type": "substitution",
+            "actual_miscue_type": "substitution",
+            "expected_skill_id": "inflectional_endings",
+            "actual_skill_id": "consonant_blends",
+            "note": ""
+          },
+          {
+            "case_id": "sub-076-walked",
+            "expected_miscue_type": "substitution",
+            "actual_miscue_type": "substitution",
+            "expected_skill_id": "inflectional_endings",
+            "actual_skill_id": "consonant_blends",
+            "note": ""
+          },
+          {
+            "case_id": "sub-077-wishing",
+            "expected_miscue_type": "substitution",
+            "actual_miscue_type": "substitution",
+            "expected_skill_id": "inflectional_endings",
+            "actual_skill_id": "consonant_digraphs",
+            "note": ""
+          },
+          {
+            "case_id": "sub-078-plays",
+            "expected_miscue_type": "substitution",
+            "actual_miscue_type": "substitution",
+            "expected_skill_id": "inflectional_endings",
+            "actual_skill_id": "vowel_teams",
+            "note": ""
+          }
+        ],
+        "accuracy": 0.6
+      },
+      "compound_words": {
+        "total": 6,
+        "passed": 6,
+        "failures": [],
+        "accuracy": 1.0
+      },
+      "multisyllabic_decoding": {
+        "total": 6,
+        "passed": 6,
+        "failures": [],
+        "accuracy": 1.0
+      },
+      "miscue_type": {
+        "total": 6,
+        "passed": 6,
+        "failures": [],
+        "accuracy": 1.0
+      },
+      "repeated_word_stress_test": {
+        "total": 2,
+        "passed": 2,
+        "failures": [],
+        "accuracy": 1.0
+      }
+    }
+  },
+  "question_groundedness_detail": {
+    "sample_size": 24,
+    "passages_sampled": 8,
+    "questions_per_passage": 3,
+    "groundedness": 0.9167,
+    "grounded_count": 22,
+    "ungrounded_examples": [
+      {
+        "passage_id": "g1-short-vowels-001",
+        "question": "Why might the duck like Pat?",
+        "skill_id": "inferential_comprehension",
+        "grounded": false,
+        "judge_reasoning": "The passage states 'The duck likes Pat' but does not provide any reason or explanation for why the duck likes Pat."
+      },
+      {
+        "passage_id": "g3-inferential-001",
+        "question": "How do you think the fox really felt about not getting the grapes?",
+        "skill_id": "inferential_comprehension",
+        "grounded": false,
+        "judge_reasoning": "The question asks how the fox 'really felt,' which requires inferring internal emotions beyond what the text literally states about his actions and words."
+      }
+    ],
+    "per_passage": [
+      {
+        "passage_id": "g1-short-vowels-001",
+        "primary_skill": "short_vowels",
+        "questions": [
+          {
+            "question": "What color is Pat's hat?",
+            "skill_id": "literal_comprehension",
+            "grounded": true,
+            "judge_reasoning": "The passage explicitly states 'The hat is red.'"
+          },
+          {
+            "question": "What does Pat do after running to the pond?",
+            "skill_id": "sequencing",
+            "grounded": true,
+            "judge_reasoning": "The text explicitly states 'Pat runs to the pond. A duck sits on a log. Pat pets the duck.' showing that Pat pets the duck after running to the pond."
+          },
+          {
+            "question": "Why might the duck like Pat?",
+            "skill_id": "inferential_comprehension",
+            "grounded": false,
+            "judge_reasoning": "The passage states 'The duck likes Pat' but does not provide any reason or explanation for why the duck likes Pat."
+          }
+        ],
+        "grounded_count": 2,
+        "total_count": 3
+      },
+      {
+        "passage_id": "g1-literal-comp-001",
+        "primary_skill": "literal_comprehension",
+        "questions": [
+          {
+            "question": "Who won the race?",
+            "skill_id": "literal_comprehension",
+            "grounded": true,
+            "judge_reasoning": "The passage explicitly states 'The tortoise won the race.' in the final sentence."
+          },
+          {
+            "question": "What did the hare do under a tree?",
+            "skill_id": "literal_comprehension",
+            "grounded": true,
+            "judge_reasoning": "The passage explicitly states 'he stopped to nap under a tree.'"
+          },
+          {
+            "question": "Why did the tortoise win even though the hare ran fast?",
+            "skill_id": "cause_and_effect",
+            "grounded": true,
+            "judge_reasoning": "The passage states the hare stopped to nap while the tortoise never stopped, and when the hare woke it was too late, directly explaining why the tortoise won despite the hare's speed."
+          }
+        ],
+        "grounded_count": 3,
+        "total_count": 3
+      },
+      {
+        "passage_id": "g2-vowel-teams-001",
+        "primary_skill": "vowel_teams",
+        "questions": [
+          {
+            "question": "What animal did Dean and his team see near the trees?",
+            "skill_id": "literal_comprehension",
+            "grounded": true,
+            "judge_reasoning": "The passage explicitly states 'They saw a deer near the trees.'"
+          },
+          {
+            "question": "Why did Dean and his team wear their raincoats?",
+            "skill_id": "cause_and_effect",
+            "grounded": true,
+            "judge_reasoning": "The passage explicitly states 'Rain began to fall, so they wore their raincoats,' which directly answers why they wore raincoats."
+          },
+          {
+            "question": "What did Dean and his team do after they tied up the boat at the pier?",
+            "skill_id": "sequencing",
+            "grounded": true,
+            "judge_reasoning": "The passage explicitly states 'Soon they reached the pier and tied up the boat. Dean and his team ate a snack of bread and cheese before heading home,' which directly answers what they did after tying up the boat."
+          }
+        ],
+        "grounded_count": 3,
+        "total_count": 3
+      },
+      {
+        "passage_id": "g2-sequencing-001",
+        "primary_skill": "sequencing",
+        "questions": [
+          {
+            "question": "What did the ant do all summer long?",
+            "skill_id": "literal_comprehension",
+            "grounded": true,
+            "judge_reasoning": "The passage directly states 'All summer long, the ant worked hard, carrying grains of food to her nest.'"
+          },
+          {
+            "question": "What happened after winter arrived?",
+            "skill_id": "sequencing",
+            "grounded": true,
+            "judge_reasoning": "The passage explicitly states what happened after winter arrived: 'The grasshopper had no food and no shelter. He knocked on the ant's door, hungry and shivering, and the ant shared what she had stored away.'"
+          },
+          {
+            "question": "Why did the grasshopper have no food when winter came?",
+            "skill_id": "cause_and_effect",
+            "grounded": true,
+            "judge_reasoning": "The passage states the grasshopper 'spent his days singing and playing' and 'still the grasshopper played' instead of storing food like the ant, directly explaining why he had no food in winter."
+          }
+        ],
+        "grounded_count": 3,
+        "total_count": 3
+      },
+      {
+        "passage_id": "g2-vocab-context-001",
+        "primary_skill": "vocabulary_in_context",
+        "questions": [
+          {
+            "question": "What did the narrator bring out for Whiskers?",
+            "skill_id": "literal_comprehension",
+            "grounded": true,
+            "judge_reasoning": "The passage explicitly states 'I brought out a warm towel and a bowl of milk.'"
+          },
+          {
+            "question": "Why was Whiskers shivering under the porch?",
+            "skill_id": "cause_and_effect",
+            "grounded": true,
+            "judge_reasoning": "The passage explicitly states Whiskers was 'drenched and shaking' and the narrator realized she was 'frightened and cold,' which directly answers why she was shivering."
+          },
+          {
+            "question": "How did Whiskers act differently after that rainy day?",
+            "skill_id": "inferential_comprehension",
+            "grounded": true,
+            "judge_reasoning": "The passage explicitly states that before, Whiskers hissed at anyone who came near, and after that day, Whiskers greeted the narrator with a soft, contented purr instead of a hiss."
+          }
+        ],
+        "grounded_count": 3,
+        "total_count": 3
+      },
+      {
+        "passage_id": "g3-cause-effect-001",
+        "primary_skill": "cause_and_effect",
+        "questions": [
+          {
+            "question": "What did the kids use to decorate the snowman?",
+            "skill_id": "literal_comprehension",
+            "grounded": true,
+            "judge_reasoning": "The passage explicitly states they decorated him with 'a carrot nose, two coal eyes, and a striped scarf.'"
+          },
+          {
+            "question": "Why did the snowman begin to shrink?",
+            "skill_id": "cause_and_effect",
+            "grounded": true,
+            "judge_reasoning": "The passage explicitly states 'Because the air grew so much warmer, the snowman began to shrink hour by hour.'"
+          },
+          {
+            "question": "What was left of the snowman by sunset?",
+            "skill_id": "sequencing",
+            "grounded": true,
+            "judge_reasoning": "The passage explicitly states 'By sunset, all that remained was a puddle of water and the carrot nose lying in the grass.'"
+          }
+        ],
+        "grounded_count": 3,
+        "total_count": 3
+      },
+      {
+        "passage_id": "g3-inferential-001",
+        "primary_skill": "inferential_comprehension",
+        "questions": [
+          {
+            "question": "What did the fox see hanging from the vine?",
+            "skill_id": "literal_comprehension",
+            "grounded": true,
+            "judge_reasoning": "The passage directly states 'A hungry fox spotted a bunch of plump, juicy grapes hanging from a high vine.'"
+          },
+          {
+            "question": "Why did the fox's legs grow tired?",
+            "skill_id": "cause_and_effect",
+            "grounded": true,
+            "judge_reasoning": "The passage directly states 'After many tries, his legs grew tired' because 'He leaped again and again' trying to reach the grapes."
+          },
+          {
+            "question": "How do you think the fox really felt about not getting the grapes?",
+            "skill_id": "inferential_comprehension",
+            "grounded": false,
+            "judge_reasoning": "The question asks how the fox 'really felt,' which requires inferring internal emotions beyond what the text literally states about his actions and words."
+          }
+        ],
+        "grounded_count": 2,
+        "total_count": 3
+      },
+      {
+        "passage_id": "g3-main-idea-001",
+        "primary_skill": "main_idea_and_summarizing",
+        "questions": [
+          {
+            "question": "What do bees carry from flower to flower that helps plants?",
+            "skill_id": "literal_comprehension",
+            "grounded": true,
+            "judge_reasoning": "The passage directly states 'they carry pollen that helps plants produce fruits, vegetables, and seeds.'"
+          },
+          {
+            "question": "Why are bee populations getting smaller?",
+            "skill_id": "cause_and_effect",
+            "grounded": true,
+            "judge_reasoning": "The passage explicitly states 'bee populations have been shrinking due to disease, pesticides, and the loss of wildflowers.'"
+          },
+          {
+            "question": "What is this passage mostly about?",
+            "skill_id": "main_idea_and_summarizing",
+            "grounded": true,
+            "judge_reasoning": "The passage's content directly supports identifying its main topic: bees' importance as pollinators, threats to their populations, and efforts to protect them."
+          }
+        ],
+        "grounded_count": 3,
+        "total_count": 3
+      }
+    ]
+  },
+  "latency_by_stage_ms": {
+    "hint_generation": {
+      "n": 10,
+      "p50_ms": 1152.2,
+      "p95_ms": 1402.8
+    },
+    "question_generation": {
+      "n": 10,
+      "p50_ms": 2496.8,
+      "p95_ms": 3564.1
+    },
+    "answer_grading": {
+      "n": 40,
+      "p50_ms": 2042.3,
+      "p95_ms": 2429.0
+    }
+  },
+  "session_total_llm_ms_percentiles": {
+    "p50_ms": 11908.4,
+    "p95_ms": 13268.6
+  },
+  "latency_sessions_run": 10,
+  "latency_note": "stt_ms/tts_ms unavailable: no real session in the sessions table has non-null pipeline_latency_ms yet (Deepgram/Cartesia stages are owned by voice-pipeline-engineer). llm_ms here is measured directly by this harness from real Claude API calls, pooled per individual call (hint/question-generation/grading) so it stays comparable to stt_ms/tts_ms - see session_total_llm_ms_percentiles for the separate, whole-session-summed figure.",
+  "flags": [
+    "api_contract.md's GET /admin/eval_report response shape was left unspecified beyond the three required top-level keys (diagnostic_accuracy, question_groundedness, latency_percentiles) - this implementation adds richer nested detail (by_category, ungrounded_examples, latency_by_stage_ms, per-session/per-passage breakdowns) beyond that minimum. Flagging in case frontend-engineer wants the contract tightened to a specific nested shape rather than left open.",
+    "latency_percentiles.p50_ms/p95_ms.stt_ms and .tts_ms are reported as null: the real sessions table (backend/mastery/mastery_dev.db) has exactly one row so far, from the single manual integration test, and its pipeline_latency_ms column is null there too - no real STT/TTS timing data exists anywhere yet for this harness to read. Only llm_ms (the stage this harness's own real Claude calls can measure) is populated. Not fabricated to fill the field.",
+    "RESOLVED (was: alignment.py's own module docstring cited 'jumped'/'panted' as words that resolve through the inflectional-endings suffix path, but they actually resolve to consonant_blends via their stems' final blend). This was a doc bug, not a code bug - classify_skill_for_word('jumped') == 'consonant_blends' was already the intended, tested behavior (tests/test_skills.py already asserted it). Fixed by correcting the docstring's example words in backend/tutor/skills.py to match reality (helped/filled for the pure-suffix case, barked/jumped for the stem-has-its-own-pattern case) rather than changing any classification logic.",
+    "PARTIALLY RESOLVED (was: open_syllables at 11%, 1/9): classify_skill_for_word's open-syllable check used to only test whether the whole word's LAST letter is a vowel. Replaced with a VCV structural check (single medial consonant between two vowels, e.g. 'ti-ny', 'ro-bot') in backend/tutor/skills.py, verified against the full tutor-logic test suite (35/35 still passing) before and after. This category is now 66.7% (6/9). Three words remain known, deliberately unfixed gaps, each re-asserted explicitly in tests/test_skills.py so a future change notices if the behavior shifts: 'tiger'/'hero' are caught earlier by the r_controlled_vowels whole-word substring scan (same 'er' shape as a real same-syllable case like 'sister'), and 'apron' has a two-consonant medial blend ('pr') that's genuinely ambiguous without a pronouncing dictionary - the same blend shape closes the syllable in a short-vowel word ('bas-ket', 'gob-lin') but stays open in a long-vowel one ('a-pron', 'ze-bra'); an earlier, more aggressive version of this fix treated any medial blend as open and wrongly flipped 'basket'/'goblin' to open_syllables as a result, so that path was deliberately left out rather than traded for a new regression."
+  ]
+}

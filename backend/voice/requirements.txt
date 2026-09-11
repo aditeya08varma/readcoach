@@ -1,0 +1,13 @@
+# ReadCoach voice pipeline (backend/voice) - Stage 0 scaffold.
+#
+# pipecat-ai ships first-party wrappers for Daily, Deepgram, Anthropic, and
+# Cartesia, so we use those extras instead of hand-rolling API clients.
+# "runner" pulls in pipecat's CLI/dev-server helper (fastapi + uvicorn) used
+# by `python bot.py -t daily` to spin up a room and a local test page.
+# "silero" is listed for clarity but needs no extra deps beyond the base
+# install (onnxruntime is already a core pipecat-ai dependency).
+# "webrtc" pulls in aiortc, used for the local `-t webrtc` test loop (faster
+# than `-t daily` for a pure STT/LLM/TTS latency check, no Daily room needed).
+pipecat-ai[daily,deepgram,anthropic,cartesia,silero,webrtc,runner]==1.8.1
+
+python-dotenv>=1.0.0,<2.0.0

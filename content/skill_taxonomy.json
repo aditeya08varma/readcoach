@@ -1,0 +1,110 @@
+[
+  {
+    "id": "short_vowels",
+    "label": "Short Vowel Sounds",
+    "category": "phonics",
+    "prerequisite_of": ["consonant_blends", "consonant_digraphs", "closed_syllables", "silent_e"]
+  },
+  {
+    "id": "consonant_blends",
+    "label": "Consonant Blends",
+    "category": "phonics",
+    "prerequisite_of": ["multisyllabic_decoding"]
+  },
+  {
+    "id": "consonant_digraphs",
+    "label": "Consonant Digraphs",
+    "category": "phonics",
+    "prerequisite_of": ["multisyllabic_decoding"]
+  },
+  {
+    "id": "closed_syllables",
+    "label": "Closed Syllables",
+    "category": "phonics",
+    "prerequisite_of": ["multisyllabic_decoding"]
+  },
+  {
+    "id": "silent_e",
+    "label": "Silent-E (VCe) Pattern",
+    "category": "phonics",
+    "prerequisite_of": ["open_syllables", "multisyllabic_decoding"]
+  },
+  {
+    "id": "vowel_teams",
+    "label": "Vowel Teams",
+    "category": "phonics",
+    "prerequisite_of": ["multisyllabic_decoding"]
+  },
+  {
+    "id": "r_controlled_vowels",
+    "label": "R-Controlled Vowels",
+    "category": "phonics",
+    "prerequisite_of": ["multisyllabic_decoding"]
+  },
+  {
+    "id": "diphthongs",
+    "label": "Diphthongs",
+    "category": "phonics",
+    "prerequisite_of": ["multisyllabic_decoding"]
+  },
+  {
+    "id": "open_syllables",
+    "label": "Open Syllables",
+    "category": "phonics",
+    "prerequisite_of": ["multisyllabic_decoding"]
+  },
+  {
+    "id": "inflectional_endings",
+    "label": "Inflectional Endings (-s, -ed, -ing)",
+    "category": "phonics",
+    "prerequisite_of": ["multisyllabic_decoding"]
+  },
+  {
+    "id": "compound_words",
+    "label": "Compound Words",
+    "category": "phonics",
+    "prerequisite_of": ["multisyllabic_decoding"]
+  },
+  {
+    "id": "multisyllabic_decoding",
+    "label": "Multisyllabic Word Decoding",
+    "category": "phonics",
+    "prerequisite_of": ["vocabulary_in_context"]
+  },
+  {
+    "id": "vocabulary_in_context",
+    "label": "Vocabulary in Context",
+    "category": "vocabulary",
+    "prerequisite_of": ["literal_comprehension"]
+  },
+  {
+    "id": "literal_comprehension",
+    "label": "Literal Comprehension",
+    "category": "comprehension",
+    "prerequisite_of": ["sequencing", "cause_and_effect", "inferential_comprehension"]
+  },
+  {
+    "id": "sequencing",
+    "label": "Sequencing Events",
+    "category": "comprehension",
+    "prerequisite_of": ["main_idea_and_summarizing"]
+  },
+  {
+    "id": "cause_and_effect",
+    "label": "Cause and Effect",
+    "category": "comprehension",
+    "prerequisite_of": ["inferential_comprehension", "main_idea_and_summarizing"]
+  },
+  {
+    "id": "inferential_comprehension",
+    "label": "Inferential Comprehension",
+    "category": "comprehension",
+    "prerequisite_of": ["main_idea_and_summarizing"]
+  },
+  {
+    "id": "main_idea_and_summarizing",
+    "label": "Main Idea and Summarizing",
+    "category": "comprehension",
+    "prerequisite_of": []
+  }
+]
