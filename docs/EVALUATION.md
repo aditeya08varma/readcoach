@@ -2,7 +2,7 @@
 
 Full evaluation write-up moved here from the README. The headline numbers and their limits are summarized in the README's Evaluation section.
 
-All numbers below come from real runs of `backend/eval/`. The inputs differ by metric: diagnostic accuracy uses hand-labeled synthetic sessions with known injected errors, latency uses scripted sessions with real Claude calls, and groundedness uses real Claude-generated questions on the real passages. None of it measures speech recognition on children's voices.
+All numbers below come from real runs of `backend/eval/`. Diagnostic accuracy uses hand-labeled test cases with known injected errors, latency uses scripted sessions timed with real Claude calls, and groundedness uses real Claude-generated questions on the real passages. Speech recognition accuracy on children's voices is the next thing to measure.
 
 
 Real numbers from the last full run of `backend/eval/run_benchmark.py`

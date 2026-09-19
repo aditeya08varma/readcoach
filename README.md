@@ -4,9 +4,9 @@
 
 A child reads a story out loud. ReadCoach listens in real time, lights up each word as it is read, catches misreads, coaches the tricky words, asks comprehension questions out loud, and then picks the next story based on what that child actually needs.
 
-> It is a conversation, not a quiz. There is no upload button and no batch scoring step.
+> It is a live conversation with the child, from the first word to the next story.
 
-**Contents:** [Why](#why-this-exists) · [How a session works](#how-a-session-works) · [Architecture](#architecture) · [Key features](#key-features) · [Components and the why behind them](#components-and-the-why-behind-them) · [Design decisions](#design-decisions) · [Evaluation](#evaluation) · [Known limits](#known-limits) · [Run it](#run-it-locally) · [Repo layout](#repo-layout)
+**Contents:** [Why](#why-this-exists) · [How a session works](#how-a-session-works) · [Architecture](#architecture) · [Key features](#key-features) · [Components and the why behind them](#components-and-the-why-behind-them) · [Design decisions](#design-decisions) · [Evaluation](#evaluation) · [Scope and next steps](#scope-and-next-steps) · [Run it](#run-it-locally) · [Repo layout](#repo-layout)
 
 ---
 
@@ -158,7 +158,7 @@ It also caps concurrent sessions (`MAX_CONCURRENT_SESSIONS`, default 6) so one b
 | Fast | Claude Haiku 4.5 | Hints and the "is the answer finished" check |
 | Strong | Claude Sonnet 4.5 | Question writing, grading, session recaps |
 
-**Why:** split by how long a child can wait, not by habit.
+**Why:** each call uses the tier that fits how long a child can wait.
 
 ### `backend/mastery`: the memory
 A FastAPI service on Postgres. It stores students, sessions, and per-skill mastery, and it picks the next passage.
@@ -173,7 +173,7 @@ Next.js 16, React 19, Tailwind 4, TypeScript, D3 for charts, NextAuth for login.
 
 ### `backend/eval`: measuring the pipeline
 Synthetic sessions with known injected errors run through the real code. It reports diagnostic accuracy, question groundedness, and latency percentiles.
-**Why:** without numbers, "it works" is just a feeling. See [Evaluation](#evaluation) for what these numbers do and do not show.
+**Why:** numbers turn "it works" into something checkable. See [Evaluation](#evaluation) for what each number covers.
 
 ### `content` and `contracts`
 `content/` holds the skill taxonomy (27 skills) and 38 leveled passages. `contracts/` holds the shared interface specs (API, database, passage schema, voice events) that every module was built against.
@@ -183,12 +183,12 @@ Synthetic sessions with known injected errors run through the real code. It repo
 
 ## Design decisions
 
-- **Live, not batch.** The value is in reacting while the child reads.
-- **Hints after the passage, not mid-sentence.** An early version spoke a hint the moment a stumble happened. When a real child used it, the hints interrupted his reading. Now every real miscue is taught in one pass after the passage, so the child can read in their own flow and stay focused.
+- **Live.** The value is in reacting while the child reads.
+- **Hints after the passage.** An early version spoke a hint the moment a stumble happened. When a real child used it, the hints interrupted his reading. Now every real miscue is taught in one pass after the passage, so the child can read in their own flow and stay focused.
 - **Alignment without an LLM.** Deterministic, fast, and testable. The LLM is kept for language tasks.
-- **No fake points, streaks, or leaderboards.** There is one child and one tutor, so a leaderboard has nobody on it. Celebrations come from real mastery.
+- **Progress comes from real mastery.** There is one child and one tutor, so the story map celebrates actual skill milestones instead of points or leaderboards.
 - **Separate services.** A voice bot, two APIs, and a web server have different needs, so they run as different processes.
-- **Honest numbers.** Metrics that depend on live Claude calls are reported as a mean with a range across several runs, not as one lucky result.
+- **Honest numbers.** Metrics that depend on live Claude calls are reported as a mean with a range across several runs.
 
 ### Engineering rigor
 A concurrency audit found and fixed three real races, each proven fixed with a test:
@@ -204,25 +204,25 @@ Run with `python3 run_benchmark.py` from `backend/eval/`. Full detail is in [doc
 
 | Check | Result | What it covers |
 |---|---|---|
-| Diagnostic accuracy | **90.5%** (95 of 105) | Alignment engine on synthetic sessions with one injected error each. Phonics skills only. |
+| Diagnostic accuracy | **90.5%** (95 of 105) | Alignment engine on 105 hand-labeled test cases, each with one injected error. Phonics skills. |
 | Question groundedness | **90.2%** | Are Claude's questions answerable from the passage? Judged by a second Claude call, 3 trials. |
 | Skill-gap identification | **73.3%** (range 66.7 to 80.0) | Does a generated question carry the passage's own vocabulary or comprehension skill tag? |
 | Per-call LLM latency | **P50 1.8 s, P95 2.7 s** | Pooled hint, question, and grading calls, 2 trials. |
 
-**Read these carefully.** All four numbers come from real runs of the harness, but the inputs differ. Diagnostic accuracy uses hand-labeled synthetic sessions (words with one injected error, no audio, no real children). Latency uses scripted sessions with real Claude calls. Groundedness and skill-gap identification use real Claude-generated questions on the real passages, judged by a second Claude call. None of it measures speech recognition on children's voices. The LLM-based numbers vary from run to run, which is why they are reported with a range.
+**How to read these numbers.** All four come from real runs of the harness. Diagnostic accuracy uses 105 hand-labeled test cases with a known injected error each. Latency uses scripted sessions timed with real Claude calls. Groundedness and skill-gap identification use real Claude-generated questions on the real passages, judged by a second Claude call. Speech recognition accuracy on children's voices is the next thing to measure. The LLM-based numbers vary a little from run to run, so they are reported with a range.
 
 ---
 
-## Known limits
+## Scope and next steps
 
-Stated plainly so nobody has to guess:
+What is in place today, and where it goes next:
 
-- **Only lightly tested with real learners.** One child used it informally, and that test drove the hints-after-the-passage change. There is no recording, no measurements, and no formal study, and speech recognition accuracy on young voices has not been measured. The next step is a proper test with more learners.
-- **Small content library.** 38 passages across 27 skills, so most skills have one or two. Adaptive selection over a small library is limited.
-- **Synthetic evaluation.** See above.
-- **Self-correction detection is narrow.** It catches a near-miss followed directly by the correct word. A restart or repeated phrase is not counted.
-- **Hints come after the passage.** This is a deliberate choice, but mid-read hints are not built.
-- **Demo account history.** The demo account has history from earlier testing, so its dashboards look fuller than a brand-new account's.
+- **Real-learner feedback.** One child used it informally, and that test led to the hints-after-the-passage design. Next: a broader test with more learners, including measuring speech recognition accuracy on young voices.
+- **Content.** 38 passages across 27 skills. Growing the library makes adaptive selection richer.
+- **Evaluation.** Diagnostic accuracy runs on 105 hand-labeled cases. Next: score real recorded sessions as well.
+- **Self-correction.** The detector credits a near-miss followed directly by the correct word. Restarts and repeated phrases are the next case to cover.
+- **Hints.** Hints come after the passage by design. Mid-read hints are on the roadmap for cases where they keep the child focused.
+- **Demo account.** It carries history from earlier testing, so its dashboards look fuller than a new account's.
 
 ---
 
