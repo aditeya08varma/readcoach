@@ -209,7 +209,7 @@ Run with `python3 run_benchmark.py` from `backend/eval/`. Full detail is in [doc
 | Skill-gap identification | **73.3%** (range 66.7 to 80.0) | Does a generated question carry the passage's own vocabulary or comprehension skill tag? |
 | Per-call LLM latency | **P50 1.8 s, P95 2.7 s** | Pooled hint, question, and grading calls, 2 trials. |
 
-**Read these carefully.** These are synthetic sessions. They test the pipeline, not real children's speech. The LLM-judged numbers vary from run to run, which is why they are reported with a range.
+**Read these carefully.** All four numbers come from real runs of the harness, but the inputs differ. Diagnostic accuracy uses hand-labeled synthetic sessions (words with one injected error, no audio, no real children). Latency uses scripted sessions with real Claude calls. Groundedness and skill-gap identification use real Claude-generated questions on the real passages, judged by a second Claude call. None of it measures speech recognition on children's voices. The LLM-based numbers vary from run to run, which is why they are reported with a range.
 
 ---
 

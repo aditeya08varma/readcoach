@@ -2,7 +2,7 @@
 
 Full evaluation write-up moved here from the README. The headline numbers and their limits are summarized in the README's Evaluation section.
 
-All numbers below come from `backend/eval/`, which runs synthetic sessions with known injected errors. They measure the pipeline, not real children.
+All numbers below come from real runs of `backend/eval/`. The inputs differ by metric: diagnostic accuracy uses hand-labeled synthetic sessions with known injected errors, latency uses scripted sessions with real Claude calls, and groundedness uses real Claude-generated questions on the real passages. None of it measures speech recognition on children's voices.
 
 
 Real numbers from the last full run of `backend/eval/run_benchmark.py`
