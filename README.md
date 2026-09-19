@@ -221,7 +221,9 @@ What is in place today, and where it goes next:
 - **Content.** 38 passages across 27 skills. Growing the library makes adaptive selection richer.
 - **Evaluation.** Diagnostic accuracy runs on 105 hand-labeled cases. Next: score real recorded sessions as well.
 - **Self-correction.** The detector credits a near-miss followed directly by the correct word. Restarts and repeated phrases are the next case to cover.
-- **Hints.** Hints come after the passage by design. Mid-read hints are on the roadmap for cases where they keep the child focused.
+- **Hints and when to step in.** Today the coach stays quiet while the child reads, and teaches each real stumble in one pass afterward. Self-corrected words are not taught. Next: a clear threshold for stepping in mid-read, such as several misses in a row or a long stuck pause, so single slips never interrupt.
+- **Interruptions.** During reading the bot listens without speaking. During questions, a fast Claude check decides whether an answer is finished, so a child who pauses to think is not cut off. Next: voice activity detection and barge-in, so the child can talk over the coach and the coach stops.
+- **Latency.** Claude calls take about 1.1 s for a hint and about 2 s for a question at P50, and the engineering dashboard reports per-stage latency from real sessions. Target: under 1.5 s from the child's last word to the coach's first audio, by streaming Claude's reply into text to speech.
 - **Demo account.** It carries history from earlier testing, so its dashboards look fuller than a new account's.
 
 ---
