@@ -4,8 +4,11 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
+import { toast } from "sonner";
 import PlumpButton from "@/components/ui/PlumpButton";
 import PenguinMascot from "@/components/reading/PenguinMascot";
+import Logo from "@/components/ui/Logo";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -29,7 +32,9 @@ export default function SignupPage() {
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      setError(body.error ?? "Something went wrong. Please try again.");
+      const message = body.error ?? "Something went wrong. Please try again.";
+      setError(message);
+      toast.error(message);
       setSubmitting(false);
       return;
     }
@@ -38,59 +43,41 @@ export default function SignupPage() {
     const result = await signIn("credentials", { email, password, redirect: false });
     setSubmitting(false);
     if (result?.error) {
-      setError("Account created, but logging in failed. Please log in manually.");
+      const message = "Account created, but logging in failed. Please log in manually.";
+      setError(message);
+      toast.error(message);
       router.push("/login");
       return;
     }
+    toast.success("Account created! Welcome to ReadCoach.");
     router.push("/");
   }
 
   return (
-    // Same real feedback and fix as the login screen: full-bleed gradient +
-    // floaty decorations + a tinted, ringed card instead of a plain white
-    // one bolted onto an otherwise fully art-directed app. Amber identity
-    // here specifically, matching the amber "Create account" button.
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-b from-sky-400 via-sky-500 to-rose-400 px-4 py-12">
-      <div aria-hidden className="pointer-events-none absolute inset-0 hidden sm:block">
-        <span className="floaty absolute left-[10%] top-[12%] text-3xl opacity-70">🌟</span>
-        <span
-          className="floaty absolute right-[12%] top-[18%] text-2xl opacity-60"
-          style={{ animationDelay: "1.2s" }}
-        >
-          ✨
-        </span>
-        <span
-          className="floaty absolute left-[14%] bottom-[16%] text-2xl opacity-50"
-          style={{ animationDelay: "2.1s" }}
-        >
-          ☁️
-        </span>
-        <span
-          className="floaty absolute right-[10%] bottom-[12%] text-3xl opacity-60"
-          style={{ animationDelay: "0.6s" }}
-        >
-          🔤
-        </span>
-        {/* Same companion as every other screen, celebrating a brand new
-            account before there's even a first story to celebrate yet. */}
-        <div
-          className="floaty absolute bottom-[4%] left-[3%] flex h-24 w-24 items-center justify-center rounded-full border-4 shadow-xl sm:h-28 sm:w-28"
-          style={{
-            background: "radial-gradient(circle at 34% 28%, #f59746a6, #f5974660)",
-            borderColor: "#f59746",
-            animationDelay: "0.4s",
-          }}
-        >
-          <PenguinMascot pose="dance" className="h-16 w-16 sm:h-20 sm:w-20" />
-        </div>
-      </div>
-
-      <div className="relative w-full max-w-sm rounded-3xl bg-amber-50/95 p-6 shadow-xl ring-2 ring-amber-200 sm:p-8">
+    // Calmed toward the dashboard's adult register, same fix and reasoning
+    // as /login: this is a parent filling out a signup form, not a child,
+    // so the full-saturation gradient and floating decorative emoji are
+    // gone. Amber stays this page's soft identity accent (matching the
+    // "Create account" button), just concentrated into the card and
+    // penguin circle instead of the whole background.
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-b from-amber-50 via-white to-amber-50 px-4 py-12">
+      <div className="relative flex w-full max-w-sm flex-col items-center">
+        <Logo size="lg" tone="dark" href={null} className="mb-6" />
+        <div className="w-full rounded-3xl bg-white p-6 shadow-xl ring-2 ring-amber-100 sm:p-8">
         <div className="mb-6 text-center">
-          <span className="text-4xl drop-shadow-sm" aria-hidden>
-            🎉
-          </span>
-          <h1 className="mt-2 font-[family-name:var(--font-kid)] text-2xl font-bold text-slate-800">
+          {/* The same penguin every other screen now has, celebrating a
+              brand new account before there's even a first story to
+              celebrate yet. */}
+          <div
+            className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border-[3px] shadow-lg"
+            style={{
+              background: "radial-gradient(circle at 34% 28%, #fde68a, #fef3c7)",
+              borderColor: "#fcd34d",
+            }}
+          >
+            <PenguinMascot pose="dance" className="h-14 w-14" />
+          </div>
+          <h1 className="mt-2 font-[family-name:var(--font-classy)] text-2xl font-bold text-slate-800">
             Create your account
           </h1>
           <p className="mt-1 text-sm text-slate-500">
@@ -101,7 +88,13 @@ export default function SignupPage() {
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
             Your email
-            <div className="flex items-center gap-2 rounded-2xl border-2 border-white bg-white px-3 py-2 shadow-sm focus-within:border-amber-300">
+            {/* Real gap found auditing keyboard focus: the input inside has
+                outline-none (a native ring clipped by this rounded pill
+                looked broken) but nothing had ever replaced it - tabbing
+                through this form left no visible focus indicator at all.
+                This wrapper is the real one now: a border color change plus
+                a genuinely visible ring, same pattern as /login. */}
+            <div className="flex items-center gap-2 rounded-2xl border-2 border-white bg-white px-3 py-2 shadow-sm transition-shadow focus-within:border-amber-300 focus-within:ring-2 focus-within:ring-amber-400/70 focus-within:ring-offset-1">
               <span aria-hidden className="text-slate-400">
                 ✉️
               </span>
@@ -117,7 +110,7 @@ export default function SignupPage() {
           </label>
           <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
             Password
-            <div className="flex items-center gap-2 rounded-2xl border-2 border-white bg-white px-3 py-2 shadow-sm focus-within:border-amber-300">
+            <div className="flex items-center gap-2 rounded-2xl border-2 border-white bg-white px-3 py-2 shadow-sm transition-shadow focus-within:border-amber-300 focus-within:ring-2 focus-within:ring-amber-400/70 focus-within:ring-offset-1">
               <span aria-hidden className="text-slate-400">
                 🔒
               </span>
@@ -134,7 +127,7 @@ export default function SignupPage() {
           </label>
           <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
             Child&apos;s name
-            <div className="flex items-center gap-2 rounded-2xl border-2 border-white bg-white px-3 py-2 shadow-sm focus-within:border-amber-300">
+            <div className="flex items-center gap-2 rounded-2xl border-2 border-white bg-white px-3 py-2 shadow-sm transition-shadow focus-within:border-amber-300 focus-within:ring-2 focus-within:ring-amber-400/70 focus-within:ring-offset-1">
               <span aria-hidden className="text-slate-400">
                 🧒
               </span>
@@ -149,19 +142,27 @@ export default function SignupPage() {
           </label>
           <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
             Grade
-            <div className="flex items-center gap-2 rounded-2xl border-2 border-white bg-white px-3 py-2 shadow-sm focus-within:border-amber-300">
+            <div className="flex items-center gap-2 rounded-2xl border-2 border-white bg-white px-3 py-2 shadow-sm transition-shadow focus-within:border-amber-300 focus-within:ring-2 focus-within:ring-amber-400/70 focus-within:ring-offset-1">
               <span aria-hidden className="text-slate-400">
                 🎓
               </span>
-              <select
-                value={grade}
-                onChange={(e) => setGrade(Number(e.target.value) as 1 | 2 | 3)}
-                className="w-full bg-transparent text-base text-slate-800 outline-none"
+              <Select
+                value={String(grade)}
+                onValueChange={(v) => setGrade(Number(v) as 1 | 2 | 3)}
               >
-                <option value={1}>Grade 1</option>
-                <option value={2}>Grade 2</option>
-                <option value={3}>Grade 3</option>
-              </select>
+                <SelectTrigger className="h-auto w-full justify-between border-0 bg-transparent p-0 text-base text-slate-800 shadow-none focus-visible:ring-0">
+                  {/* Base UI's Select.Value renders the raw value as-is
+                      unless given a formatter - it doesn't infer a label
+                      from the matching SelectItem's children the way some
+                      other libraries do. */}
+                  <SelectValue>{(v: string | null) => (v ? `Grade ${v}` : "Grade")}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">Grade 1</SelectItem>
+                  <SelectItem value="2">Grade 2</SelectItem>
+                  <SelectItem value="3">Grade 3</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </label>
 
@@ -182,6 +183,7 @@ export default function SignupPage() {
             Log in
           </Link>
         </p>
+        </div>
       </div>
     </main>
   );

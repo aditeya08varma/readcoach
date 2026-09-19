@@ -69,13 +69,46 @@ export default function FluencyTrendChart({
     // one label per 70px) so dates don't overlap on narrow viewports.
     const maxTicks = Math.max(2, Math.floor(innerWidth / 70));
     const tickStride = Math.ceil(data.length / maxTicks) || 1;
+    const tickDates = x.domain().filter((_, i) => i % tickStride === 0);
+    // Real feedback: several real sessions seeded within one testing day
+    // made this axis show the same "Sep 11" label under 5 of 6 points - a
+    // parent would read that as a broken chart, not "your child read five
+    // times today." Each tick still gets a real, distinct label: the first
+    // tick of a given calendar day shows the date as before, and any later
+    // tick that shares that same day shows its time-of-day instead.
+    //
+    // That first fix wasn't enough on its own: re-checked live against the
+    // real backend (not mock data) and every session timestamp genuinely is
+    // distinct down to the millisecond - e.g. two quick back-to-back retries
+    // on the same passage a few seconds apart. Minute-precision time (the
+    // %I:%M %p fallback above) can't tell those two apart, so they rendered
+    // as the same label again - a real formatting gap, not a data problem.
+    // Guard against that by comparing each candidate label to the previous
+    // tick's actual rendered label (not just its calendar day) and, only if
+    // they still collide, escalating that one tick to second-precision time.
+    const dayFmt = d3.timeFormat("%b %d");
+    const timeFmt = (d: Date) => d3.timeFormat("%I:%M %p")(d).replace(/^0/, "");
+    const timeSecFmt = (d: Date) => d3.timeFormat("%I:%M:%S %p")(d).replace(/^0/, "");
+    const tickLabels = new Map<Date, string>();
+    let prevTickDay: string | null = null;
+    let prevLabel: string | null = null;
+    for (const d of tickDates) {
+      const day = dayFmt(d);
+      let label = day === prevTickDay ? timeFmt(d) : day;
+      if (label === prevLabel) {
+        label = timeSecFmt(d);
+      }
+      tickLabels.set(d, label);
+      prevTickDay = day;
+      prevLabel = label;
+    }
     g.append("g")
       .attr("transform", `translate(0,${innerHeight})`)
       .call(
         d3
           .axisBottom<Date>(x)
-          .tickFormat((d) => d3.timeFormat("%b %d")(d as Date))
-          .tickValues(x.domain().filter((_, i) => i % tickStride === 0))
+          .tickFormat((d) => tickLabels.get(d as Date) ?? "")
+          .tickValues(tickDates)
       )
       .call((sel) => sel.selectAll("text").attr("font-size", 11).attr("fill", "#64748b"))
       .call((sel) => sel.select(".domain").attr("stroke", "#cbd5e1"));

@@ -2,13 +2,16 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
+import { CalendarDays, Timer, Target, RotateCcw, type LucideIcon } from "lucide-react";
 import { getMastery, getSessions } from "@/lib/api";
 import type { DataSource, MasterySkill, SessionSummary } from "@/lib/types";
 import FluencyTrendChart from "@/components/dashboard/FluencyTrendChart";
 import MasteryBarChart from "@/components/dashboard/MasteryBarChart";
 import DataSourceBadge from "@/components/DataSourceBadge";
 import PenguinMascot from "@/components/reading/PenguinMascot";
+import Logo from "@/components/ui/Logo";
 
 const CATEGORY_LEGEND: Array<{ label: string; color: string }> = [
   { label: "Phonics", color: "#0284c7" },
@@ -16,11 +19,15 @@ const CATEGORY_LEGEND: Array<{ label: string; color: string }> = [
   { label: "Comprehension", color: "#7c3aed" },
 ];
 
-const STAT_ICONS: Record<string, string> = {
-  Sessions: "📅",
-  "Latest WCPM": "⏱️",
-  "Latest accuracy": "🎯",
-  "Self-corrections": "🔁",
+// Swapped from emoji to lucide-react icons - this stat row is dense,
+// data-forward information for an adult, not the kind of screen where a
+// child-facing emoji illustration adds anything, so a crisper line-icon set
+// reads more refined here. Kid-facing screens (home/map/read) keep emoji.
+const STAT_ICONS: Record<string, LucideIcon> = {
+  Sessions: CalendarDays,
+  "Latest WCPM": Timer,
+  "Latest accuracy": Target,
+  "Self-corrections": RotateCcw,
 };
 
 // Real feedback: this recap section only ever showed the single latest
@@ -65,10 +72,23 @@ function buildDailyRecap(todaysSessions: SessionSummary[]): string {
 export default function DashboardPage() {
   const { data: session, status } = useSession();
   const studentId = session?.user?.studentId;
+  const router = useRouter();
+  const pathname = usePathname();
   const [sessions, setSessions] = useState<SessionSummary[] | null>(null);
   const [mastery, setMastery] = useState<MasterySkill[] | null>(null);
   const [sessionsSource, setSessionsSource] = useState<DataSource | null>(null);
   const [masterySource, setMasterySource] = useState<DataSource | null>(null);
+
+  // Real gap found by audit: this page (and /read, /map) only ever gated
+  // its own data fetch on `status === "authenticated"` - an unauthenticated
+  // visitor never got sent anywhere, they just watched an empty-state shell
+  // forever. Redirect for real, with a callback param the login page (app/
+  // login/page.tsx) already reads and returns to after a successful login.
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.replace(`/login?callbackUrl=${encodeURIComponent(pathname)}`);
+    }
+  }, [status, router, pathname]);
 
   useEffect(() => {
     if (status !== "authenticated" || !studentId) return;
@@ -112,19 +132,24 @@ export default function DashboardPage() {
     // engineering), not the whole app.
     <main className="min-h-screen bg-gradient-to-b from-violet-50 via-white to-violet-50 px-4 py-8 sm:py-10">
       <div className="mx-auto max-w-5xl">
-        <div className="mb-6 flex items-center justify-between">
-          <Link
-            href="/"
-            className="text-sm font-medium text-slate-500 transition hover:text-slate-700"
-          >
-            &larr; Home
-          </Link>
-          <button
-            onClick={() => signOut({ callbackUrl: "/login" })}
-            className="text-sm font-medium text-slate-500 transition hover:text-slate-700"
-          >
-            Sign out
-          </button>
+        <div className="mb-6">
+          <div className="flex items-center justify-between">
+            <Link
+              href="/"
+              className="text-sm font-medium text-slate-500 transition hover:text-slate-700"
+            >
+              &larr; Home
+            </Link>
+            <button
+              onClick={() => signOut({ callbackUrl: "/login" })}
+              className="text-sm font-medium text-slate-500 transition hover:text-slate-700"
+            >
+              Sign out
+            </button>
+          </div>
+          <div className="mt-3 flex justify-center">
+            <Logo size="sm" tone="dark" href={null} />
+          </div>
         </div>
 
         <div className="mb-8 flex items-center gap-4">
@@ -132,7 +157,7 @@ export default function DashboardPage() {
             {(session?.user?.displayName ?? "?").slice(0, 1)}
           </div>
           <div>
-            <h1 className="font-[family-name:var(--font-kid)] text-xl font-bold text-slate-800 sm:text-2xl">
+            <h1 className="font-[family-name:var(--font-classy)] text-xl font-bold text-slate-800 sm:text-2xl">
               {session?.user?.displayName}&apos;s Reading Progress
             </h1>
             <p className="text-sm text-slate-500">Grade {session?.user?.grade}</p>
@@ -250,12 +275,12 @@ const STAT_TILE_CARD_CLASSES = {
 } as const;
 
 function StatTile({
-  icon,
+  icon: Icon,
   color,
   label,
   value,
 }: {
-  icon: string;
+  icon: LucideIcon;
   color: keyof typeof STAT_TILE_COLORS;
   label: string;
   value: string;
@@ -263,10 +288,10 @@ function StatTile({
   return (
     <div className={`flex flex-col items-center gap-1 rounded-2xl p-3.5 text-center shadow-md ring-2 transition hover:-translate-y-0.5 hover:shadow-lg sm:p-4 ${STAT_TILE_CARD_CLASSES[color]}`}>
       <span
-        className={`flex h-9 w-9 items-center justify-center rounded-xl text-base ${STAT_TILE_COLORS[color]}`}
+        className={`flex h-9 w-9 items-center justify-center rounded-xl ${STAT_TILE_COLORS[color]}`}
         aria-hidden
       >
-        {icon}
+        <Icon className="h-5 w-5" strokeWidth={2.25} />
       </span>
       <div className="font-[family-name:var(--font-kid)] text-xl font-bold text-slate-800 sm:text-2xl">{value}</div>
       <div className="text-[11px] text-slate-500 sm:text-xs">{label}</div>

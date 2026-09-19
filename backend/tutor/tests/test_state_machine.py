@@ -194,6 +194,41 @@ async def test_review_is_skipped_entirely_on_a_clean_read():
 
 
 @pytest.mark.asyncio
+async def test_review_retry_with_an_unrelated_short_word_is_graded_wrong():
+    """Real, confirmed safety bug repro: `submit_review_reply` (state_machine.py:355)
+    grades a review retry via `_closely_matches`, which used to be a flat
+    `Levenshtein distance <= 1` check with no length gate. CVC short-vowel
+    words (cat/bat/hat/mat/sat/rat/fat/pat - the single most common grade-1
+    phonics word family) are all pairwise distance 1 from each other, so a
+    child who missed "cat" and, on retry, said the wrong word "hat" instead
+    would have had that wrong retry marked CORRECT. It must be marked wrong.
+    """
+    passage = {
+        "id": "test-passage-cvc",
+        "grade": 1,
+        "title": "Test",
+        "text": "The cat sat on a mat.",
+        "words": ["The", "cat", "sat", "on", "a", "mat"],
+        "skills": ["short_vowels"],
+        "primary_skill": "short_vowels",
+        "comprehension_hint_topics": ["the cat"],
+    }
+    llm = FakeLLMClient()
+    session = TutorSession(passage=passage, llm_client=llm)
+    words = ["The", "hat", "sat", "on", "a", "mat"]  # "cat" (idx1) misread as "hat"
+    for i, word in enumerate(words):
+        await session.feed_word_recognized(_word_event(word, (i + 1) * 500))
+    session.finish_passage(now_t=3000)
+    assert session._review_queue == [1]
+
+    await session.start_review()
+    result, next_teach = await session.submit_review_reply("hat", now_t=3100)
+    assert result["reference_index"] == 1
+    assert result["correct"] is False  # "hat" is still not "cat" - must not be marked correct
+    assert next_teach is None
+
+
+@pytest.mark.asyncio
 async def test_finish_passage_computes_wcpm_and_transitions_state():
     llm = FakeLLMClient()
     session = TutorSession(passage=PASSAGE, llm_client=llm)
@@ -219,6 +254,42 @@ async def test_finish_passage_computes_wcpm_and_transitions_state():
 
 
 @pytest.mark.asyncio
+async def test_a_vocabulary_skill_question_flows_through_to_persisted_columns():
+    """End-to-end proof that a vocabulary skill (previously unclassifiable
+    anywhere in backend/tutor - see claude_client.py's VOCABULARY_SKILL_IDS
+    comment) can now actually be tagged on a comprehension question and land
+    in `to_session_columns()`'s `comprehension` jsonb, exactly the signal
+    mastery-engineer reads to update a skill's mastery weight
+    (contracts/db_schema.sql). Uses a passage that declares a vocabulary
+    skill, matching a real curated passage like content/passages/
+    g3-figurative-language-001.json.
+    """
+    vocab_passage = {**PASSAGE, "skills": ["figurative_language", "vocabulary_in_context"]}
+    llm = FakeLLMClient(
+        questions=[
+            ComprehensionQuestion(
+                "What does 'jumped for joy' mean here?",
+                "figurative_language",
+                "he was very happy",
+            )
+        ]
+    )
+    session = TutorSession(passage=vocab_passage, llm_client=llm)
+    for i, word in enumerate(vocab_passage["words"]):
+        await session.feed_word_recognized(_word_event(word, (i + 1) * 500))
+    session.finish_passage(now_t=5000)
+
+    await session.start_comprehension(num_questions=1)
+    assert llm.question_calls[0]["passage_skills"] == ["figurative_language", "vocabulary_in_context"]
+
+    await session.submit_answer("it means he was happy", now_t=6000)
+
+    columns = session.to_session_columns()
+    assert len(columns["comprehension"]) == 1
+    assert columns["comprehension"][0]["skill_id"] == "figurative_language"
+
+
+@pytest.mark.asyncio
 async def test_comprehension_flow_asks_questions_grounded_in_passage_and_grades_answers():
     # Real, explicit request: a wrong answer gets exactly one retry (the
     # SAME question repeated) before moving on - see submit_answer's
@@ -237,6 +308,7 @@ async def test_comprehension_flow_asks_questions_grounded_in_passage_and_grades_
     first_question = await session.start_comprehension()
     assert session.state is TutorState.COMPREHENSION
     assert llm.question_calls[0]["passage_text"] == PASSAGE["text"]
+    assert llm.question_calls[0]["passage_skills"] == PASSAGE["skills"]
     assert first_question == "Why did the frog jump?"
 
     event1, next_q, is_retry1 = await session.submit_answer("because Brad clapped", now_t=6000)
@@ -359,3 +431,61 @@ async def test_hear_partial_answer_force_submits_after_the_fragment_cap_even_if_
     )
     event, _next_q, _is_retry = result
     assert event["answer_given"] == "word0 word1 word2 word3"
+
+
+@pytest.mark.asyncio
+async def test_insertion_count_tracks_extra_words_not_in_the_passage():
+    # Real bug found live (see docs/BUILD_LOG.md): backend/voice/
+    # tutor_processor.py used to decide "has the child finished reading"
+    # purely by comparing raw Deepgram word count to the passage's own word
+    # count - a real, already-modeled insertion (an extra word the child
+    # said that isn't in the passage at all, e.g. a repeated phrase or a
+    # filler word) counts toward that raw total without ever advancing real
+    # progress through the reference passage. This test proves
+    # TutorSession.insertion_count correctly isolates exactly those extra
+    # words - what tutor_processor.py now subtracts before comparing
+    # against the passage length - and, more importantly, proves the old
+    # buggy trigger point (raw recognized count reaching the passage's word
+    # count) does NOT yet mean the passage is actually done.
+    #
+    # Values below (insertion_count, effective progress at each step) are
+    # taken from actually running this exact sequence, not predicted by
+    # hand - the real alignment engine needs a little trailing context
+    # before it settles on "insertion" for an ambiguous recent word, the
+    # same lookahead behavior feed_word_recognized's own docstring already
+    # documents for live miscue classification, so insertion_count is not
+    # expected to update the instant each "um" is spoken.
+    llm = FakeLLMClient()
+    session = TutorSession(passage=PASSAGE, llm_client=llm)
+    # PASSAGE has 9 real words. Two genuine insertions ("um") are spoken
+    # partway through, before the passage is actually finished - "um" isn't
+    # a close phonetic match for any nearby reference word, so the real
+    # alignment engine has no reasonable way to read it as anything but an
+    # extra, inserted word once enough trailing context confirms it.
+    spoken = ["Brad", "likes", "um", "the", "frog", "The", "um", "frog", "jumps", "Brad", "claps"]
+    recognized_count = 0
+    effective_at_old_bug_trigger_point = None
+    for word in spoken:
+        await session.feed_word_recognized(_word_event(word, recognized_count * 500 + 500))
+        recognized_count += 1
+        if recognized_count == len(PASSAGE["words"]):
+            # This is exactly the moment the OLD code (comparing raw
+            # recognized_count to len(passage.words)) would have called
+            # _finish_reading - two real reference words ("Brad", "claps")
+            # plus the passage's very last "jumps" haven't been spoken yet.
+            effective_at_old_bug_trigger_point = recognized_count - session.insertion_count
+
+    assert session.insertion_count == 2, "both \"um\"s are genuine insertions, not real progress"
+    assert recognized_count == 11, "9 real words plus 2 insertions"
+
+    assert effective_at_old_bug_trigger_point < len(PASSAGE["words"]), (
+        "at the exact point the old bug would have ended the reading turn, "
+        "real progress must still read as short of the passage's real "
+        "length - the child genuinely hadn't finished yet"
+    )
+
+    final_progress = recognized_count - session.insertion_count
+    assert final_progress == len(PASSAGE["words"]) == 9, (
+        "insertion-adjusted progress must land exactly on the passage's "
+        "real word count once the whole passage has genuinely been read"
+    )

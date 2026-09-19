@@ -125,10 +125,21 @@ async def fetch_mastery_vector(student_id: str | None) -> dict[str, float] | Non
 
 async def post_completed_session(
     *, student_id: str, passage_id: str, session_columns: dict
-) -> None:
+) -> str | None:
     """POST /sessions per contracts/api_contract.md. Best-effort: logs and
     swallows failures rather than crashing the voice pipeline over a
     bookkeeping call after the child's session already finished.
+
+    Returns the real, server-minted `session_id` from main.py's
+    `IngestSessionResponse` (the `/sessions` response body always includes
+    it, confirmed live) on success - real contract violation found by an
+    audit and fixed here: tutor_processor.py's `session_ended` event
+    (contracts/voice_events.md) is required to carry this id, and this was
+    the one place it could come from, since `session_id` doesn't exist
+    anywhere until this POST succeeds. Returns None on any failure (timeout,
+    connection error, non-2xx) - same best-effort behavior as before, just
+    now the caller can tell "not persisted" from "persisted" instead of
+    always getting nothing back.
     """
     payload = {
         "student_id": student_id,
@@ -150,6 +161,9 @@ async def post_completed_session(
         async with httpx.AsyncClient(timeout=3.0) as client:
             resp = await client.post(f"{MASTERY_SERVICE_URL}/sessions", json=payload)
             resp.raise_for_status()
-            logger.info(f"Posted session to mastery service: {resp.json()}")
+            body = resp.json()
+            logger.info(f"Posted session to mastery service: {body}")
+            return body.get("session_id")
     except Exception as e:
         logger.warning(f"Failed to post session to mastery service (non-fatal): {e}")
+        return None

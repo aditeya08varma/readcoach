@@ -1,6 +1,7 @@
 "use client";
 
 import type { ButtonHTMLAttributes } from "react";
+import { motion } from "framer-motion";
 import { celebrate, playPop, type PopKind } from "@/lib/confettiPop";
 
 type PlumpVariant = "primary" | "secondary" | "white";
@@ -25,7 +26,7 @@ export default function PlumpButton({
   disabled,
   children,
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & {
+}: Omit<ButtonHTMLAttributes<HTMLButtonElement>, "onDrag" | "onDragStart" | "onDragEnd" | "onAnimationStart"> & {
   variant?: PlumpVariant;
   pop?: PopKind;
   confettiCount?: number;
@@ -48,13 +49,21 @@ export default function PlumpButton({
   }
 
   return (
-    <button
+    // Real gap found while auditing what actually happens on hover here:
+    // nothing did - only a real click triggered any feedback at all (the
+    // existing btn-3d press, confetti, sound). whileHover adds a real,
+    // separate spring lift BEFORE a click even happens, deliberately scoped
+    // to hover only (no whileTap) so it never fights the existing CSS 3D
+    // press-down effect that already owns the actual click moment.
+    <motion.button
       {...rest}
       disabled={disabled}
       onClick={handleClick}
-      className={`btn-3d inline-flex items-center justify-center gap-2 rounded-3xl px-7 py-3.5 font-[family-name:var(--font-kid)] text-lg font-bold transition-transform disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100 ${VARIANT_CLASSES[variant]} ${className}`}
+      whileHover={disabled ? undefined : { scale: 1.03, y: -2 }}
+      transition={{ type: "spring", stiffness: 400, damping: 17 }}
+      className={`btn-3d inline-flex items-center justify-center gap-2 rounded-3xl px-7 py-3.5 font-[family-name:var(--font-kid)] text-lg font-bold disabled:cursor-not-allowed disabled:opacity-50 ${VARIANT_CLASSES[variant]} ${className}`}
     >
       {children}
-    </button>
+    </motion.button>
   );
 }

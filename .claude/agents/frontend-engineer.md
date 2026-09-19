@@ -25,6 +25,13 @@ Two UI surfaces, keep them cleanly separated:
    deliberately lean — no elaborate badge/streak gamification system unless
    everything else is done early. The voice interaction itself is the differentiator,
    not UI chrome competing for attention with it.
+   *Amendment:* this line predates the story map and challenge-word mechanics,
+   which were later built specifically as gamification (see docs/BUILD_LOG.md's
+   "Adding a real game feel, without inventing fake rewards"). The standing
+   rejection is of *fake* rewards — streaks, points, badges, leaderboards — not
+   of narrative/celebration work driven by real mastery data. Real, data-backed
+   additions to the story map (narrative framing, milestone celebrations tied to
+   actual mastery thresholds) are in scope.
 2. **Dashboards** — parent/teacher view (fluency trend line + skill mastery bar/radar
    chart, both D3) and a lightweight engineering view (pipeline latency P50/P95, eval
    score) fed by `GET /admin/engineering_dashboard`. If time runs short, the

@@ -26,6 +26,46 @@ of the live pipeline, Deepgram, Claude, Cartesia, and Daily, requires an interne
 connection by design, so there is no real offline path without a completely different
 architecture.
 
+## Known, deliberately deferred content gaps
+
+These two are not feature ideas - they are real gaps found during a content audit of
+`content/` that are correctly out of scope for a quick fix pass, because both are
+content-authoring-volume or schema problems (dozens of new passages, or a schema
+change plus a re-tag of existing data), not a bug with a small, contained diff. Listed
+here so they are tracked rather than silently dropped once the audit that found them is
+forgotten.
+
+### Single-passage skills have no rotation for repeated remediation
+
+**What it is.** 16 of the 27 skills in `content/skill_taxonomy.json` have exactly one
+passage tagged as `primary_skill`. If a child needs to practice a weak skill more than
+once, `mastery-engineer`'s passage selection has no second passage to hand back - it can
+only ever re-serve the same story, which a child will have memorized rather than
+genuinely re-read after the first retry.
+
+**Why it's deferred.** The fix is real content authoring, not a code change: at least
+one additional grade-appropriate, public-domain-or-original passage per single-coverage
+skill, each hand-checked against `contracts/passage_schema.json` and manually verified
+for groundedness the same way the existing 38 were. That's realistically a dozen-plus
+new passages, which is exactly the kind of content-volume work this pass was scoped to
+flag rather than attempt.
+
+### `vocabulary_in_context` passages don't record which word they're testing
+
+**What it is.** The 9 passages tagged with `vocabulary_in_context` (as primary or
+co-skill) rely on `comprehension_hint_topics` free text (e.g. "what 'grumpy' means
+based on the story") to informally indicate the target word, but there's no structured
+field recording it. `tutor-logic-engineer`'s question generation and any future
+scoring/reporting on this skill has to infer or re-derive the target word instead of
+reading it directly, and there's no cheap way to say "list every passage that drills the
+word X" or audit that every vocabulary_in_context passage actually has one.
+
+**Why it's deferred.** This is a schema change (`contracts/passage_schema.json` needs a
+new optional `target_word` field) plus a re-tag pass over all 9 existing passages to
+backfill it correctly from their own text - small in code terms, but it touches a
+contract other agents already build against, which is the kind of change this pass was
+scoped to flag rather than make unilaterally mid-fix.
+
 ## Tier 1: Quick wins
 
 ### Auto-generated parent session recap
@@ -50,6 +90,17 @@ a short text block on the parent dashboard.
 loop, but Claude doing something useful with structured data after the fact. It also
 directly answers a question any parent evaluating a tutoring product asks first, which
 is what did my kid actually do today, in language a busy parent will actually read.
+
+**Status: built and verified** (see docs/BUILD_LOG.md's "A short, automatic recap of
+each session for a parent to read" and the later "The dashboard's real recap, made
+honest about a real multi-story day"). The backend calls Claude after every session to
+write the warm two-to-three sentence recap described above, stored as `session_recap`
+and shown on the parent dashboard. A day with a single story shows that exact
+Claude-written sentence; a day with more than one story falls back to an honest,
+arithmetic summary computed on the dashboard itself (`buildDailyRecap` in
+`frontend/app/dashboard/page.tsx`) - real story count, averaged wcpm and accuracy, and
+summed self-corrections - rather than only ever showing the single latest session.
+Nothing left to build here; it is already live in the product.
 
 ### "Why this story" explanation on the reading screen
 
@@ -141,11 +192,19 @@ separate facts. It shows the system actually behaving differently, live, in resp
 what it already knows about a specific child, which is the kind of adaptive behavior a
 panel of engineers judging AI product work will specifically be listening for.
 
-**Status: built and verified** (see docs/BUILD_LOG.md's "Building three ideas from the
-feature ideation pass"). The gap now is that this only ever happens inside a live
-session and leaves no visible trace anywhere else - a parent looking at the dashboard,
-or a judge who isn't watching the exact right second of a demo video, has no way to
-know it ever happened. The follow-on idea directly below is about closing that gap.
+**Status: built, then removed - this idea no longer describes the live system.** This
+was genuinely built and verified (see docs/BUILD_LOG.md's "Building three ideas from
+the feature ideation pass"), but real testing afterward showed that ANY spoken
+mid-read correction, delayed or not, reads to a child as being talked over
+mid-sentence. It was removed entirely and replaced with a different design: every
+stumble is now tracked silently while reading (unchanged), and taught in one spoken
+pass, word by word, only after the whole passage is finished - see BUILD_LOG's "A
+third, completely different kind of problem, closer to a product decision than a bug"
+for the actual current behavior. `state_machine.py`'s own module comment says this
+plainly: "The mastery-aware pacing constants that used to live here... are gone, not
+tuned - the whole live-hint mechanism they paced is gone too." The follow-on idea
+directly below was written against the old, now-removed mechanism and is stale in the
+same way - see its own corrected status note.
 
 ### Making the adaptive hint pacing visible outside the live moment it happens
 
@@ -198,14 +257,20 @@ needs no persistence at all and is the only one that helps the demo video specif
 Options 2 (recap line) and 3 (engineering metric) can follow together once the two new
 columns exist, since both just read the same two numbers.
 
-**Status: the two columns and the underlying tally are built and tested** (see
-docs/BUILD_LOG.md). One honest finding from testing this rather than assuming it: a
-delayed hint being cancelled by a genuine self-correction is real, correct, tested
-code, but empirically close to unreachable in practice with the current aligner - its
-self-correction fold only looks at the word immediately following a misread one (well
-before a hint would ever be queued for the extra mastery-aware delay in the first
-place), and a live experiment feeding a real "child backtracks several words later"
-utterance confirmed it reads as two unrelated substitutions, not a self-correction.
+**Status: stale - the mechanism this section is about surfacing was removed.** The two
+columns described below (`hints_delayed_count`, `hints_delayed_self_corrected_count`)
+are real and still exist, but were repurposed once the live mastery-pacing delay was
+removed (see the status note on the section above) - they now count "how many words
+got queued for the end-of-passage review" and "how many the child got right when asked
+to say it again," which is a different, already-visible-in-effect mechanism, not the
+in-session delay this section was written to explain. None of the three surfacing
+options below (a live visual cue for a held-back hint, a recap sentence about delayed
+hints, an engineering metric on hints held back) still make sense as written, since
+there is no more in-session hold-back decision to surface. A comparable idea - making
+the end-of-passage review itself more visible/legible to a parent or judge, since that
+is the mechanism that actually runs today - would be a genuinely new idea, not written
+up here, and would need its own effort/pitch-value writeup from scratch rather than a
+find-and-replace on this one.
 So `hints_delayed_self_corrected_count` should be expected to sit at or near zero in
 real sessions. `hints_delayed_count` (how many times extra time was given at all) is
 the number actually worth building the recap sentence and any engineering metric
@@ -362,9 +427,10 @@ building.
 ## Summary
 
 If any new feature work happens after the eval, the real testing, and the UI polish are
-genuinely finished, the two ideas most worth the remaining time are the "why this story"
+genuinely finished, the idea most worth the remaining time is the "why this story"
 explanation, because it is nearly free and makes the most technically interesting part
-of the system visible, and mastery-aware adaptive hint pacing, because it is the one
-idea that makes two already-built pieces work together in a way that is currently only
-true on paper. Everything else on this list is here to be honest about what exists as
+of the system visible. Mastery-aware adaptive hint pacing, the other idea previously
+named here, was built and later removed (see its own status note above) in favor of
+the end-of-passage review design that actually ships today - it is no longer a live
+recommendation. Everything else on this list is here to be honest about what exists as
 an option, not to suggest it all needs to happen.

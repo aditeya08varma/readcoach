@@ -11,6 +11,20 @@ let ctx: CanvasRenderingContext2D | null = null;
 let particles: Particle[] = [];
 let rafId: number | null = null;
 let audioCtx: AudioContext | null = null;
+// Real bug found from real testing: physics and decay used to advance by a
+// fixed amount every animation-frame callback, so a burst's real lifespan
+// depended entirely on how often the browser actually delivered rAF frames.
+// A tab that's momentarily backgrounded, occluded, or just busy (like during
+// a route transition) throttles rAF hard, and a burst meant to fully fade in
+// ~1.2s could instead take 10+ real seconds to clear - long enough that its
+// particles are still visibly falling over whatever page the user has since
+// navigated to (e.g. stray dots drifting over the dashboard's fluency chart,
+// or lingering around the reading screen's own Start Reading button after a
+// short passage already finished). Tracking real elapsed time and scaling
+// every increment by it keeps a burst's true wall-clock lifetime bounded to
+// roughly the same ~1.2s regardless of frame rate, so leftover particles
+// can never meaningfully outlive the page/interaction that spawned them.
+let lastFrameTime = 0;
 
 interface Particle {
   x: number;
@@ -51,16 +65,25 @@ function resize() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
-function step() {
+function step(now: number = performance.now()) {
   if (!ctx || !canvas) return;
+  // Scaled against a 60fps baseline (~16.67ms/frame) so every increment
+  // below still reads exactly as before at 60fps, but now tracks real time
+  // elapsed instead of just "one callback happened" - see lastFrameTime's
+  // own comment above for why that distinction is the actual fix. Not
+  // clamped: a big gap (a throttled/backgrounded tab finally getting a
+  // frame) should let a burst catch up and finish immediately rather than
+  // linger, which is the whole point.
+  const dtScale = lastFrameTime ? (now - lastFrameTime) / (1000 / 60) : 1;
+  lastFrameTime = now;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   const alive: Particle[] = [];
   for (const p of particles) {
-    p.vy += 0.16;
-    p.x += p.vx;
-    p.y += p.vy;
-    p.rot += p.vrot;
-    p.life -= 0.014;
+    p.vy += 0.16 * dtScale;
+    p.x += p.vx * dtScale;
+    p.y += p.vy * dtScale;
+    p.rot += p.vrot * dtScale;
+    p.life -= 0.014 * dtScale;
     if (p.life > 0 && p.y < window.innerHeight + 40) {
       alive.push(p);
       ctx.save();
@@ -79,7 +102,14 @@ function step() {
     }
   }
   particles = alive;
-  rafId = particles.length > 0 ? requestAnimationFrame(step) : null;
+  if (particles.length > 0) {
+    rafId = requestAnimationFrame(step);
+  } else {
+    rafId = null;
+    // Reset so the next burst's very first frame computes a fresh dtScale
+    // of 1 instead of one huge jump from however long the canvas sat idle.
+    lastFrameTime = 0;
+  }
 }
 
 /** Confetti burst centered at (x, y) in viewport coordinates. */
@@ -104,6 +134,44 @@ export function celebrate(x: number, y: number, count = 24) {
     });
   }
   if (!rafId) rafId = requestAnimationFrame(step);
+}
+
+/**
+ * Fully tears down any in-flight confetti burst: cancels the animation
+ * loop, drops every particle, and removes the canvas (and its resize
+ * listener) from the DOM. Real bug found by a second audit on top of the
+ * wall-clock decay fix above: even a burst bounded to ~1.2s is still long
+ * enough to visibly bleed across a client-side route change, since
+ * `celebrate()` and `router.push()` are called back-to-back in the same
+ * handler (see app/page.tsx's handleStartReading) - the canvas is a
+ * document.body-level singleton with no React ownership, so nothing ever
+ * unmounted it when the page that spawned it went away. The same leftover
+ * canvas (fixed, full-viewport, zIndex 999, pointer-events none) is also
+ * what a second symptom - celebration glyphs briefly appearing over the
+ * reading screen's subtitle on load - actually was: not a separate bug, just
+ * this same overlay still drawing on top of whatever mounted next.
+ *
+ * Call this on every route change (see components/PageTransition.tsx, the
+ * one place that already observes every navigation app-wide) instead of
+ * further capping the burst's own duration - that only shrinks the window,
+ * it can't close it, since a fast-enough navigation can always outrace any
+ * fixed duration.
+ */
+export function teardownConfetti() {
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId);
+    rafId = null;
+  }
+  particles = [];
+  lastFrameTime = 0;
+  if (canvas) {
+    if (typeof window !== "undefined") {
+      window.removeEventListener("resize", resize);
+    }
+    canvas.remove();
+  }
+  canvas = null;
+  ctx = null;
 }
 
 const POP_PRESETS: Record<PopKind, { f0: number; f1: number; dur: number; gain: number; shimmer: boolean }> = {

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Baloo_2, Geist, Geist_Mono } from "next/font/google";
+import { Baloo_2, Fraunces, Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Providers from "./providers";
 
@@ -21,6 +21,16 @@ const baloo = Baloo_2({
   weight: ["500", "600", "700", "800"],
 });
 
+// Warm variable serif for the adult-facing screens' headings (login, signup,
+// dashboard, admin) - reads as premium and trustworthy without going cold or
+// corporate, fitting this app's existing warm amber brand better than a
+// plain grotesk would.
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+});
+
 export const metadata: Metadata = {
   title: "ReadCoach",
   description: "A live voice AI reading tutor for grades 1-3",
@@ -30,7 +40,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${baloo.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${baloo.variable} ${fraunces.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <Providers>{children}</Providers>

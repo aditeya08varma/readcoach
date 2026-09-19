@@ -25,8 +25,9 @@ import uuid
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 import db
 import mastery
@@ -132,11 +133,28 @@ def _startup() -> None:
     db.init_db()
 
 
+@app.exception_handler(db.PoolExhaustedError)
+async def _handle_pool_exhausted(request: Request, exc: db.PoolExhaustedError) -> JSONResponse:
+    # Registered as a FastAPI exception handler (same layer HTTPException is
+    # handled at) rather than caught ad hoc in each endpoint, so it runs
+    # INSIDE CORSMiddleware and gets real CORS headers on the response - see
+    # db.py's own comment on PoolExhaustedError for why a raw, uncaught
+    # psycopg2.pool.PoolError doesn't. 503 (not 500): every connection being
+    # checked out under real concurrent load is a transient capacity issue,
+    # not this request's fault - "try again shortly" is the honest, actionable
+    # message, not a generic server error.
+    logger.warning(f"database connection pool exhausted: {exc}")
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "service temporarily busy, please try again"},
+    )
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _get_student_or_404(cur: sqlite3.Cursor, student_id: str) -> sqlite3.Row:
+def _validate_student_id_shape(student_id: str) -> None:
     # Real bug found live (see docs/BUILD_LOG.md): `id` is a real Postgres
     # `uuid` column. A non-UUID string like the frontend's old hardcoded
     # placeholder "demo-student-1" made psycopg2 raise
@@ -148,11 +166,27 @@ def _get_student_or_404(cur: sqlite3.Cursor, student_id: str) -> sqlite3.Row:
     # exactly masking this the same way the missing CORS config did.
     # Validating the shape first turns that crash into an ordinary, correctly
     # CORS-headered 404, which SQLite (untyped columns, local dev) already
-    # produced for the same input without needing this check.
+    # produced for the same input without needing this check. Split out of
+    # _get_student_or_404 below so callers that don't actually need the
+    # student row back (most of them - see that function's own comment)
+    # can keep this crash guard without paying for a whole extra query just
+    # to throw its result away: each `cur.execute()` is a real network round
+    # trip to Supabase, not a free local call.
     try:
         uuid.UUID(student_id)
     except ValueError:
         raise HTTPException(status_code=404, detail="student not found")
+
+
+def _get_student_or_404(cur: sqlite3.Cursor, student_id: str) -> sqlite3.Row:
+    """For endpoints that need real fields off the student row (e.g.
+    next_passage needs student["grade"]). Endpoints that only need the
+    404-if-missing check and otherwise never touch the returned row should
+    use _validate_student_id_shape and fold the existence check into their
+    real query instead (a `students` join/CROSS JOIN filtered on this id
+    returns zero rows exactly when the student doesn't exist) - see
+    list_sessions, get_mastery, get_story_map below for the pattern."""
+    _validate_student_id_shape(student_id)
     cur.execute("select * from students where id = ?", (student_id,))
     row = cur.fetchone()
     if row is None:
@@ -226,20 +260,32 @@ def get_passage(student_id: str, passage_id: str):
 
 @app.get("/students/{student_id}/mastery", response_model=list[MasterySkillResponse])
 def get_mastery(student_id: str):
+    # Was a separate _get_student_or_404 round trip (select * from students)
+    # followed by this one - each cur.execute() is a real network round trip
+    # to Supabase, not a free local call, so that was 2x the latency this
+    # endpoint actually needs. `students` is now joined directly into the
+    # real query instead: a real student with zero mastery rows still
+    # produces one row per skill (cross join), and a missing student
+    # produces zero rows total, so the same 404 behavior falls out of one
+    # round trip instead of two.
+    _validate_student_id_shape(student_id)
     with db.get_cursor() as cur:
-        _get_student_or_404(cur, student_id)
         cur.execute(
             """
             select s.id as skill_id, s.label, s.category,
                    coalesce(m.weight, 0.0) as weight
-            from skills s
+            from students st
+            cross join skills s
             left join student_skill_mastery m
-                on m.skill_id = s.id and m.student_id = ?
+                on m.skill_id = s.id and m.student_id = st.id
+            where st.id = ?
             order by s.id
             """,
             (student_id,),
         )
         rows = cur.fetchall()
+    if not rows:
+        raise HTTPException(status_code=404, detail="student not found")
     return [
         MasterySkillResponse(skill_id=r["skill_id"], label=r["label"], category=r["category"], weight=r["weight"])
         for r in rows
@@ -260,8 +306,13 @@ def get_story_map(student_id: str):
     larger piece of work: POST /sessions/{id}/voice_token, the endpoint that
     would need to carry that choice through to the voice bot, was documented
     from the start but never actually built)."""
+    # student was fetched here via _get_student_or_404 purely for the
+    # 404-if-missing check - the row itself was never read afterward. Now
+    # validated up front (no query) and folded into the last per-student
+    # query below instead, the same round-trip-saving pattern as
+    # get_mastery/list_sessions above.
+    _validate_student_id_shape(student_id)
     with db.get_cursor() as cur:
-        student = _get_student_or_404(cur, student_id)
         priority_order = mastery.topological_skill_order(cur)
         cur.execute("select id, label, category from skills")
         skill_rows = {r["id"]: r for r in cur.fetchall()}
@@ -276,8 +327,19 @@ def get_story_map(student_id: str):
         # identical bug and now uses the same helper).
         weight_rows = mastery.get_weights(cur, student_id)
         weights = {sid: weight_rows.get(sid, 0.0) for sid in priority_order}
-        cur.execute("select distinct passage_id from sessions where student_id = ?", (student_id,))
-        attempted_ids = {r["passage_id"] for r in cur.fetchall()}
+        cur.execute(
+            """
+            select st.id as student_row_id, sess.passage_id
+            from students st
+            left join sessions sess on sess.student_id = st.id
+            where st.id = ?
+            """,
+            (student_id,),
+        )
+        student_rows = cur.fetchall()
+        if not student_rows:
+            raise HTTPException(status_code=404, detail="student not found")
+        attempted_ids = {r["passage_id"] for r in student_rows if r["passage_id"] is not None}
 
     # Real bug found from a real screenshot: this used to only include
     # passages at the student's own grade, "to avoid showing content well
@@ -328,6 +390,10 @@ def get_story_map(student_id: str):
     )
 
 
+def _passage_exists(passage_id: str) -> bool:
+    return any(p["id"] == passage_id for p in passage_selection.get_passages())
+
+
 def _find_passage_title(passage_id: str) -> str:
     for p in passage_selection.get_passages():
         if p["id"] == passage_id:
@@ -356,19 +422,31 @@ def list_sessions(student_id: str):
     implemented during the first integration pass - the parent dashboard
     ran on mocked data for this endpoint until now. Implemented for real
     alongside the auto-generated recap feature, since that's the field
-    this endpoint needed to start actually returning."""
+    this endpoint needed to start actually returning.
+
+    Was a separate _get_student_or_404 round trip before this query - see
+    get_mastery's own comment for why that's now folded into one query via
+    a left join instead: a real student with zero sessions still produces
+    exactly one row (every session column null), a missing student
+    produces zero rows, so the null-id rows are filtered out in Python
+    below instead of costing a second round trip to tell "no sessions yet"
+    apart from "no such student"."""
+    _validate_student_id_shape(student_id)
     with db.get_cursor() as cur:
-        _get_student_or_404(cur, student_id)
         cur.execute(
             """
-            select id, passage_id, started_at, wcpm, accuracy, self_corrections, session_recap
-            from sessions
-            where student_id = ?
-            order by started_at asc
+            select st.id as student_row_id, sess.id, sess.passage_id, sess.started_at,
+                   sess.wcpm, sess.accuracy, sess.self_corrections, sess.session_recap
+            from students st
+            left join sessions sess on sess.student_id = st.id
+            where st.id = ?
+            order by sess.started_at asc
             """,
             (student_id,),
         )
         rows = cur.fetchall()
+    if not rows:
+        raise HTTPException(status_code=404, detail="student not found")
     return [
         SessionHistoryItem(
             id=r["id"],
@@ -383,6 +461,7 @@ def list_sessions(student_id: str):
             session_recap=r["session_recap"],
         )
         for r in rows
+        if r["id"] is not None
     ]
 
 
@@ -391,6 +470,25 @@ async def ingest_session(req: IngestSessionRequest):
     """Formalized in contracts/api_contract.md as POST /sessions (same shape as
     originally built here, just moved off the /internal prefix once the
     orchestrator confirmed this as the real integration point)."""
+    # Real bug found live: an unknown passage_id used to sail through with a
+    # plain 200 and an empty `updates` list instead of failing loudly - a
+    # session literally cannot be scored against a passage that doesn't
+    # exist (there's no primary_skill to give clean-read credit for, no
+    # title for the recap, and `sessions.passage_id` isn't a real foreign
+    # key - see contracts/db_schema.sql's own comment: it's a plain text
+    # column matched against contracts/passage_schema.json/content/passages
+    # by convention, not enforced by Postgres). This mirrors the 404 already
+    # documented for GET /students/{id}/passages/{passage_id} ("404 if
+    # passage_id doesn't exist in the content library"), applied at the one
+    # other place a passage_id arrives from a caller. Doesn't break the real
+    # ingestion flow: every real caller (backend/voice/mastery_client.py)
+    # only ever gets a passage_id by first calling GET next_passage or GET
+    # passages/{id} - both backed by this exact same
+    # passage_selection.get_passages() content library - so a real session's
+    # passage_id always exists here already.
+    if not _passage_exists(req.passage_id):
+        raise HTTPException(status_code=404, detail="passage not found")
+
     session_id = str(uuid.uuid4())
     miscues = [m.model_dump() for m in req.miscues]
     comprehension = [c.model_dump() for c in req.comprehension]

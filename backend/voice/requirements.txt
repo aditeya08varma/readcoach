@@ -11,3 +11,10 @@
 pipecat-ai[daily,deepgram,anthropic,cartesia,silero,webrtc,runner]==1.8.1
 
 python-dotenv>=1.0.0,<2.0.0
+
+# Dev-only, for the unit tests in tests/ (voice_events.py's pure event
+# builders, mastery_client.py's httpx calls mocked via httpx.MockTransport -
+# no extra mocking library needed). Same versions backend/tutor already
+# pins, for consistency.
+pytest>=8.0.0
+pytest-asyncio>=0.24.0

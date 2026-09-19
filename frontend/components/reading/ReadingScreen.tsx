@@ -71,14 +71,13 @@ export default function ReadingScreen({
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [hint, setHint] = useState<string | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
-  const [started, setStarted] = useState(false);
-  // Real bug found from a real recording: `started` flips true on the very
-  // first click, before anything has actually been read once - showing
-  // "Read Again" while the very first read is still in progress. This
-  // tracks whether a read has ever actually finished, deliberately never
-  // reset by handleStart (only a fresh page/passage should clear it), so the
-  // label stays "Start Reading" through the whole first read and only
-  // switches once there's something to genuinely read "again".
+  // Real bug found from a real recording: naively flipping a "started" flag
+  // true on the very first click showed "Read Again" while the very first
+  // read was still in progress. This tracks whether a read has ever actually
+  // finished, deliberately never reset by handleStart (only a fresh
+  // page/passage should clear it), so the label stays "Start Reading"
+  // through the whole first read and only switches once there's something
+  // to genuinely read "again".
   const [hasCompletedOnce, setHasCompletedOnce] = useState(false);
   // "Challenge word" gameplay - see docs/FEATURE_IDEAS.md. The reading
   // screen already knows, from the word-by-word event stream alone, which
@@ -93,12 +92,30 @@ export default function ReadingScreen({
   // attempting the real bot every time - if it can't be reached, this falls
   // back to the mock automatically rather than leaving the screen stuck, but
   // says so explicitly rather than silently pretending it's live.
-  const [sourceMode, setSourceMode] = useState<"live" | "mock">("live");
+  // Real voice bot only now - the manual "use simulated demo" toggle was
+  // removed from the UI (see PassageDisplay's neighboring JSX) since the
+  // real bot is the only path we want a viewer to see; createLiveVoiceEventSource's
+  // own onStatus "error" handler below still silently falls back to a mock
+  // source if the real bot is ever unreachable, so reading still works even
+  // though the toggle itself is gone.
+  const sourceMode: "live" | "mock" = "live";
   const [liveStatus, setLiveStatus] = useState<LiveVoiceStatus | null>(null);
   const [fellBackToMock, setFellBackToMock] = useState(false);
   const sourceRef = useRef<VoiceEventSource | null>(null);
   const hintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const challengeCelebrationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Real bug found from a real recording: the mock (and the real bot, which
+  // shares this same post-completion "teach the words you missed" pacing -
+  // see voiceEventStream.ts's runReview) keeps sending hint_spoken events
+  // *after* passage_complete already fired, one per genuinely-missed word.
+  // Each one's own setTimeout below used to hardcode voiceState back to
+  // "listening" once its bubble's 2.2s were up - correct mid-passage, but
+  // once the passage is actually over that's the very state this whole task
+  // is about: a stale "Listening to you read..." left on screen right next
+  // to the real "Great reading!" summary. A ref (not the isComplete state
+  // itself) because this timeout's closure is created back when the
+  // hint_spoken event first arrived, potentially before isComplete flipped.
+  const isCompleteRef = useRef(false);
 
   const challengeIndex = passage.challenge_word_index ?? null;
   // Cleared once we've read past it and either never flagged a miscue there
@@ -172,13 +189,18 @@ export default function ReadingScreen({
         if (hintTimeoutRef.current) clearTimeout(hintTimeoutRef.current);
         hintTimeoutRef.current = setTimeout(() => {
           setHint(null);
-          setVoiceState("listening");
-        }, 2200);
+          // Back to "done" (not "listening") if the passage already
+          // finished by the time this particular hint's bubble timed out -
+          // see isCompleteRef's own comment above for why this is a real
+          // race, not a hypothetical one.
+          setVoiceState(isCompleteRef.current ? "done" : "listening");
+        }, 10000);
         break;
       }
       case "passage_complete": {
         setRecognizedCount(passage.words.length);
         setIsComplete(true);
+        isCompleteRef.current = true;
         setHasCompletedOnce(true);
         setVoiceState("done");
         setSummary({
@@ -201,7 +223,6 @@ export default function ReadingScreen({
   }
 
   async function handleStart() {
-    setStarted(true);
     setSummary(null);
     setHint(null);
     setRecognizedCount(0);
@@ -210,6 +231,7 @@ export default function ReadingScreen({
     setShowChallengeCelebration(false);
     wasChallengeClearedRef.current = false;
     setIsComplete(false);
+    isCompleteRef.current = false;
     setFellBackToMock(false);
     setLiveStatus(null);
     // Reset to the page's own fetched passage - if the previous attempt was
@@ -251,7 +273,22 @@ export default function ReadingScreen({
           mock.start();
         }
       },
-    }, chosenPassageId, studentId);
+    // Real bug found live: this used to pass `chosenPassageId` alone, which
+    // is undefined on the auto-select path (no ?passage_id= in the URL) -
+    // so the real bot never got told which passage this screen actually
+    // displayed, and independently ran its own fetch_next_passage on the
+    // backend. That's two separate calls to the same selection logic with
+    // no guarantee they agree, and empirically they didn't: one real session
+    // displayed a mock-fallback passage ("Pat and the Big Hat") while the
+    // bot, unaware, connected against a completely different real one
+    // ("Things at the Farm") it picked on its own. Falling back to
+    // `initialPassage.id` - the passage actually on screen, whether it came
+    // from a real fetch or the mock fallback - means the bot is always told
+    // to use exactly what the viewer is looking at, closing the same class
+    // of screen/backend disagreement this project already fixed once for
+    // the explicit-choice case (see docs/BUILD_LOG.md) but never for
+    // auto-select.
+    }, chosenPassageId ?? initialPassage.id, studentId);
     sourceRef.current = source;
     source.start();
   }
@@ -279,18 +316,6 @@ export default function ReadingScreen({
         challengeCleared={challengeCleared}
         showChallengeCelebration={showChallengeCelebration}
       />
-
-      {!started && (
-        <label className="flex w-fit items-center gap-2 self-start rounded-full bg-white/90 px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm">
-          <input
-            type="checkbox"
-            checked={sourceMode === "mock"}
-            onChange={(e) => setSourceMode(e.target.checked ? "mock" : "live")}
-            className="h-3.5 w-3.5"
-          />
-          Use simulated demo instead of the real voice bot
-        </label>
-      )}
 
       {sourceMode === "live" && liveStatus === "connecting" && (
         <p className="w-fit rounded-full bg-white/90 px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm">

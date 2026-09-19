@@ -1,9 +1,20 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { MapCategory, MapPassageRef, MapSkillNode, StoryMap } from "@/lib/types";
 import { celebrate, playPop } from "@/lib/confettiPop";
 import PenguinMascot, { type PenguinPose } from "@/components/reading/PenguinMascot";
+import TrailCompanion, { type TrailCompanionKind } from "@/components/map/TrailCompanions";
+// Same narrative copy the map page's own journey-status subtitle reads from
+// (see app/map/page.tsx) - one shared file so a category's tagline/milestone
+// text and the overall journey line never drift out of sync with each
+// other. Lives at the repo's top-level content/ directory alongside the
+// other real content this app already reads from there (skill_taxonomy.json,
+// passages/), not duplicated under frontend/ - Next's bundler resolves a
+// plain relative JSON import outside its own root without any extra config.
+import storyNarrative from "../../../content/story_narrative.json";
 
 const CATEGORY_META: Record<
   string,
@@ -53,18 +64,23 @@ const ZIGZAG = ["translate-x-0", "translate-x-[26%]", "translate-x-0", "-transla
 
 // Trailside company for the wide margins either side of the path itself -
 // real feedback that the page still looked bare next to how much motion the
-// rest of the app has. Two independent cadences, not one shared list: the
-// penguin cycles through its four poses (wave, dance, sleep, sing) on its
-// own every-3rd-step beat, and the emoji flourishes cycle on their own beat
-// one step off from that. Splitting them this way is what actually
-// guarantees a family scrolling the full 12-step phonics path sees every
-// single one of the four poses at least once - a single shared list this
-// long would only reach every other pose within any real category this app
-// actually has. The penguin reappears here deliberately (Duolingo's own owl
-// shows up beside its path more than once too) rather than being invented
-// as a second, competing character.
+// rest of the app has.
+//
+// Real bug found live (see docs/BUILD_LOG.md): this used to be two
+// INDEPENDENT triggers one step apart (penguin every 3rd step, emoji on the
+// step right before it) - meaning every decorated penguin had an emoji
+// decoration immediately adjacent to it on the very next row, two large
+// circular bubbles stacked close enough to crowd or overlap, then a long
+// gap until the next pair. One single decoration per slot, alternating
+// penguin/emoji each time it fires, spaces every decoration evenly instead
+// of clustering them in back-to-back pairs.
 const PENGUIN_POSES: PenguinPose[] = ["wave", "dance", "sleep", "sing"];
-const EMOJI_DECOR = ["📖", "⭐", "🐟", "☁️"];
+// Real feedback: a plain emoji here read as an afterthought sitting right
+// next to the penguin's own hand-drawn, animated illustration - three real,
+// separately-drawn trail companions instead (components/map/
+// TrailCompanions.tsx), sharing the penguin's own palette and outline
+// style rather than a mismatched font glyph.
+const COMPANION_DECOR: TrailCompanionKind[] = ["bookworm", "star", "cloud"];
 
 // Real feedback: this screen said "map"/"path"/"trail"/"journey" in its own
 // copy, but the layout underneath was a plain grid with no sense of where a
@@ -90,24 +106,46 @@ function findCurrentSkillId(storyMap: StoryMap): string | null {
   return best?.skill_id ?? null;
 }
 
-export default function StoryMapView({ storyMap }: { storyMap: StoryMap }) {
+export default function StoryMapView({
+  storyMap,
+  studentId,
+}: {
+  storyMap: StoryMap;
+  studentId: string;
+}) {
   const currentSkillId = findCurrentSkillId(storyMap);
   return (
     <div className="flex flex-col gap-6 sm:gap-8">
       {storyMap.categories.map((category) => (
-        <CategoryPath key={category.category} category={category} currentSkillId={currentSkillId} />
+        <CategoryPath
+          key={category.category}
+          category={category}
+          currentSkillId={currentSkillId}
+          studentId={studentId}
+        />
       ))}
     </div>
   );
 }
 
+// One flag per student per category, never re-shown once tripped - a
+// reload (or a later session where that category's already-mastered skills
+// simply stay mastered) must never re-fire a moment that's supposed to be a
+// genuine one-time milestone, not a badge that re-announces itself forever.
+function celebratedKey(studentId: string, category: string): string {
+  return `readcoach:celebrated:${studentId}:${category}`;
+}
+
 function CategoryPath({
   category,
   currentSkillId,
+  studentId,
 }: {
   category: MapCategory;
   currentSkillId: string | null;
+  studentId: string;
 }) {
+  const reduceMotion = useReducedMotion();
   const meta = CATEGORY_META[category.category] ?? {
     label: category.category,
     icon: "🗺️",
@@ -116,10 +154,74 @@ function CategoryPath({
     ring: "ring-slate-200",
   };
   const masteredCount = category.skills.filter((s) => s.weight >= MASTERED_THRESHOLD).length;
+  const isCategoryComplete = category.skills.length > 0 && masteredCount === category.skills.length;
+  const narrative = (storyNarrative.categories as Record<string, { tagline: string; milestone_text: string }>)[
+    category.category
+  ];
+  const sectionRef = useRef<HTMLElement>(null);
+  // The one-time decision lives in a lazy initializer, but this initializer
+  // only ever READS localStorage, never writes it - real, hands-on testing
+  // against the real running app (not just reasoned about) caught a genuine
+  // bug in an earlier version that also wrote the flag here: React's own
+  // Strict Mode deliberately invokes a lazy initializer twice on mount to
+  // help surface exactly this kind of impurity, so a write in this position
+  // meant the first invocation set the flag and the second invocation - the
+  // one whose return value React actually keeps - then saw its own write
+  // and concluded "already celebrated," so the celebration silently never
+  // rendered at all in dev. Keeping this read-only and moving the actual
+  // mark-as-celebrated write into the effect below (which is idempotent
+  // under Strict Mode's mount->cleanup->mount replay, unlike the
+  // initializer) is what makes the decision correct under double-invocation
+  // instead of merely correct in production by accident.
+  const [showCelebration, setShowCelebration] = useState(() => {
+    if (!isCategoryComplete) return false;
+    if (typeof window === "undefined") return false;
+    try {
+      return window.localStorage.getItem(celebratedKey(studentId, category.category)) === null;
+    } catch {
+      // Private browsing / storage disabled - fail closed (no re-fire risk,
+      // just no celebration) rather than throwing.
+      return false;
+    }
+  });
+
+  // Purely the celebration's own side effects (marking the flag, confetti
+  // burst, pop sound, auto-dismiss timer) - the decision of *whether* to
+  // celebrate was already made above, once, so this never calls
+  // setShowCelebration(true) itself, only the deferred
+  // setShowCelebration(false) once the timer actually fires. Marking the
+  // flag here rather than in the initializer is what stays correct even
+  // when Strict Mode replays this effect (mount -> cleanup -> mount): the
+  // write is a plain idempotent localStorage.setItem of the same key/value
+  // both times, not a read-then-branch that a second run could see
+  // differently than the first.
+  useEffect(() => {
+    if (!showCelebration) return;
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem(celebratedKey(studentId, category.category), "1");
+      } catch {
+        // Same fail-closed posture as the initializer above - a storage
+        // write failing here shouldn't take down the celebration that's
+        // already decided to show.
+      }
+    }
+    const rect = sectionRef.current?.getBoundingClientRect();
+    const x = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
+    const y = rect ? Math.min(Math.max(rect.top, 0) + 120, window.innerHeight - 80) : window.innerHeight / 2;
+    celebrate(x, y, 64);
+    playPop("primary");
+    const timer = setTimeout(() => setShowCelebration(false), 5000);
+    return () => clearTimeout(timer);
+    // Deliberately empty deps beyond the mount itself - this must fire
+    // exactly once for the initial true value, never again for this
+    // instance.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
-    <section className={`rounded-3xl ${meta.bg} p-5 shadow-lg ring-2 ${meta.ring} sm:p-6`}>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
+    <section ref={sectionRef} className={`relative rounded-3xl ${meta.bg} p-5 shadow-lg ring-2 ${meta.ring} sm:p-6`}>
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-2.5 font-[family-name:var(--font-kid)] text-lg font-bold text-slate-800">
           <span
             aria-hidden
@@ -135,6 +237,18 @@ function CategoryPath({
           {masteredCount}/{category.skills.length} mastered
         </span>
       </div>
+      {narrative && (
+        <p className="mb-5 text-xs font-medium text-slate-500 sm:text-sm">{narrative.tagline}</p>
+      )}
+      <AnimatePresence>
+        {showCelebration && narrative && (
+          <CategoryCelebration
+            text={narrative.milestone_text}
+            color={meta.color}
+            onDismiss={() => setShowCelebration(false)}
+          />
+        )}
+      </AnimatePresence>
 
       {/* A narrow, centered column (not the full section width) - Duolingo's
           own path stays this narrow even on a wide desktop screen, which is
@@ -144,36 +258,47 @@ function CategoryPath({
         {(() => {
           const currentIndex = category.skills.findIndex((s) => s.skill_id === currentSkillId);
           return category.skills.map((node, i) => {
-            // Two independent triggers sharing the same margin, one step
-            // apart so they never land on the same node: the penguin at
-            // every step whose number is a multiple of 3 (3, 6, 9, ...),
-            // the emoji at every step one before that (2, 5, 8, ...). Both
-            // ordinals are derived straight from i, not a running counter,
-            // so this stays a pure function of each step's own index - and
-            // both alternate sides independently, starting on opposite
-            // sides of each other so an adjacent pair never doubles up.
-            const showPenguin = (i + 1) % 3 === 0;
-            const showEmoji = i % 3 === 1;
-            const penguinOrdinal = (i - 2) / 3;
-            const emojiOrdinal = (i - 1) / 3;
-            const decor: { kind: "penguin"; pose: PenguinPose } | { kind: "emoji"; content: string } | null =
-              showPenguin
-                ? { kind: "penguin", pose: PENGUIN_POSES[penguinOrdinal % PENGUIN_POSES.length] }
-                : showEmoji
-                  ? { kind: "emoji", content: EMOJI_DECOR[emojiOrdinal % EMOJI_DECOR.length] }
-                  : null;
-            const side: "left" | "right" = showPenguin
-              ? penguinOrdinal % 2 === 0
-                ? "right"
-                : "left"
-              : emojiOrdinal % 2 === 0
-                ? "left"
-                : "right";
+            // Real feedback, twice over: a decoration still felt randomly
+            // placed even once it was spaced out and its side matched the
+            // node's own zigzag lean - because a centered node (the
+            // zigzag's other two phases) has no real "open side" to justify
+            // one, so that case was still an arbitrary pick underneath.
+            // Decorating ONLY the nodes that actually lean one way - the
+            // zigzag's own left-most and right-most steps - removes the
+            // arbitrary case entirely: every decoration now has an obvious
+            // reason for exactly which side it's on. Those two phases are
+            // exactly the odd-numbered steps of this zigzag (phase 1 and
+            // phase 3 of the repeating 4-step cycle both land on odd i),
+            // which conveniently also means "every other step" - a clean,
+            // predictable, genuinely alternating cadence instead of a
+            // separate modulus to reason about.
+            const zigzagPhase = i % ZIGZAG.length;
+            const showDecor = zigzagPhase === 1 || zigzagPhase === 3;
+            const slotOrdinal = (i - 1) / 2;
+            const decor: { kind: "penguin"; pose: PenguinPose } | { kind: "companion"; companion: TrailCompanionKind } | null =
+              !showDecor
+                ? null
+                : slotOrdinal % 2 === 0
+                  ? { kind: "penguin", pose: PENGUIN_POSES[(slotOrdinal / 2) % PENGUIN_POSES.length] }
+                  : { kind: "companion", companion: COMPANION_DECOR[((slotOrdinal - 1) / 2) % COMPANION_DECOR.length] };
+            // The node's own lean decides its decoration's side outright,
+            // no tie-break needed now that centered nodes never reach here:
+            // shifted right (phase 1) leaves the left genuinely open,
+            // shifted left (phase 3) leaves the right genuinely open.
+            const side: "left" | "right" = zigzagPhase === 1 ? "left" : "right";
             return (
-              <div
+              <motion.div
                 key={node.skill_id}
-                className="path-step-in relative flex w-full flex-col items-center"
-                style={{ animationDelay: `${i * 0.09}s` }}
+                className="relative flex w-full flex-col items-center"
+                initial={reduceMotion ? false : { opacity: 0, y: 18, scale: 0.94 }}
+                whileInView={{ opacity: 1, y: 0, scale: 1 }}
+                viewport={{ once: true, margin: "-40px" }}
+                transition={{
+                  type: "spring",
+                  stiffness: 260,
+                  damping: 22,
+                  delay: i * 0.07,
+                }}
               >
                 {i > 0 && (
                   <PathConnector filled={category.skills[i - 1].weight >= MASTERED_THRESHOLD} color={meta.color} />
@@ -195,12 +320,73 @@ function CategoryPath({
                   offsetClass={ZIGZAG[i % ZIGZAG.length]}
                 />
                 {decor && <SideDecoration decor={decor} side={side} color={meta.color} />}
-              </div>
+              </motion.div>
             );
           });
         })()}
       </div>
     </section>
+  );
+}
+
+// A real, hard-to-miss moment - not a small corner toast - for the one
+// thing on this whole map that's actually rare: every single skill in a
+// whole category genuinely mastered. Fixed over the entire viewport (not
+// scoped to the section, which may well be scrolled out of view by the time
+// this fires) so it reads the same whether the triggering category is the
+// first on the page or the last. Auto-dismisses via the timer in
+// CategoryPath's own effect, but also closable early - a young reader
+// shouldn't have to wait out an animation to get back to their map.
+function CategoryCelebration({
+  text,
+  color,
+  onDismiss,
+}: {
+  text: string;
+  color: string;
+  onDismiss: () => void;
+}) {
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 sm:p-6"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onDismiss}
+    >
+      <motion.div
+        role="status"
+        className="relative flex w-full max-w-sm flex-col items-center gap-3 rounded-3xl bg-white p-6 text-center shadow-2xl sm:max-w-md sm:gap-4 sm:p-8"
+        style={{ boxShadow: `0 24px 60px ${color}55` }}
+        initial={{ opacity: 0, y: 24, scale: 0.9 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 12, scale: 0.95 }}
+        transition={{ type: "spring", stiffness: 260, damping: 20 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Dismiss"
+          className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200"
+        >
+          ✕
+        </button>
+        <div
+          className="flex h-24 w-24 items-center justify-center rounded-full border-4 shadow-md sm:h-28 sm:w-28"
+          style={{
+            background: `radial-gradient(circle at 34% 28%, ${color}99, ${color}55)`,
+            borderColor: color,
+          }}
+        >
+          <PenguinMascot pose="dance" className="h-20 w-20 sm:h-24 sm:w-24" />
+        </div>
+        <p className="font-[family-name:var(--font-kid)] text-base font-bold text-slate-800 sm:text-lg">
+          Path complete! 🎉
+        </p>
+        <p className="text-sm text-slate-600 sm:text-base">{text}</p>
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -226,7 +412,7 @@ function SideDecoration({
   side,
   color,
 }: {
-  decor: { kind: "penguin"; pose: PenguinPose } | { kind: "emoji"; content: string };
+  decor: { kind: "penguin"; pose: PenguinPose } | { kind: "companion"; companion: TrailCompanionKind };
   side: "left" | "right";
   color: string;
 }) {
@@ -237,19 +423,21 @@ function SideDecoration({
       aria-hidden
       className={`pointer-events-none absolute top-1/2 hidden -translate-y-1/2 md:block ${posClass}`}
     >
-      {decor.kind === "emoji" ? (
+      {decor.kind === "companion" ? (
         // The same bubble language as the penguin below, scaled down a
-        // notch so the penguin still reads as the star of this margin -
-        // a bare floating emoji next to a properly bubbled penguin looked
-        // like only half the page had actually been finished.
+        // notch so the penguin still reads as the star of this margin - a
+        // real, hand-drawn companion (components/map/TrailCompanions.tsx)
+        // instead of a plain emoji glyph, each with its own real animation
+        // already, so the bubble itself stays still rather than adding a
+        // second, competing drift on top.
         <div
-          className="floaty flex h-24 w-24 items-center justify-center rounded-full border-[3px] shadow-md lg:h-32 lg:w-32"
+          className="flex h-24 w-24 items-center justify-center rounded-full border-[3px] shadow-md lg:h-32 lg:w-32"
           style={{
             background: `radial-gradient(circle at 34% 28%, ${color}55, ${color}22)`,
             borderColor: `${color}bb`,
           }}
         >
-          <span className="text-5xl lg:text-6xl">{decor.content}</span>
+          <TrailCompanion kind={decor.companion} className="h-16 w-16 lg:h-20 lg:w-20" />
         </div>
       ) : (
         // A real, properly colored bubble, not a barely-tinted wash that

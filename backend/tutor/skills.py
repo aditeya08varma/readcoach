@@ -47,6 +47,29 @@ def phonics_skill_ids() -> frozenset[str]:
     )
 
 
+@lru_cache(maxsize=1)
+def vocabulary_skill_ids() -> frozenset[str]:
+    return frozenset(
+        entry["id"] for entry in load_taxonomy() if entry["category"] == "vocabulary"
+    )
+
+
+@lru_cache(maxsize=1)
+def comprehension_skill_ids() -> frozenset[str]:
+    """All comprehension-category skill ids, read live from the taxonomy
+    file - claude_client.py derives its COMPREHENSION_SKILL_IDS from this
+    (rather than hand-copying the id list) specifically because a hand-copied
+    list is exactly what silently went stale before: it was written once
+    against a 5-comprehension-skill taxonomy and never updated when
+    content-curator added character_traits_and_analysis, compare_and_contrast,
+    predicting_outcomes, and authors_purpose, leaving all four with no
+    classification path at all. See claude_client.py's own comment.
+    """
+    return frozenset(
+        entry["id"] for entry in load_taxonomy() if entry["category"] == "comprehension"
+    )
+
+
 # --- pattern tables (all matched against the lowercased reference word) ----
 
 # Vowel teams that are NOT diphthongs (those get their own category below).

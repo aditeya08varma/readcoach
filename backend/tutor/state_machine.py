@@ -148,6 +148,20 @@ class TutorSession:
     _hints_delayed_count: int = field(default=0, init=False)
     _hints_delayed_self_corrected_count: int = field(default=0, init=False)
 
+    # Real bug found live (see docs/BUILD_LOG.md): tutor_processor.py used
+    # to decide "has the child finished reading" purely from how many words
+    # Deepgram had ever recognized, compared to the passage's own word
+    # count. Insertions - a real, already-modeled miscue type for "the
+    # child said an extra word that isn't in the passage at all" - count
+    # toward Deepgram's recognized total but never advance real progress
+    # through the reference passage, so a child who repeated a phrase, said
+    # a filler word, or had a stray word misrecognized could hit the
+    # passage's real word count well before actually finishing it - ending
+    # the reading turn early and silently cutting off all further live
+    # highlighting for the rest of the read. Exposed here so
+    # tutor_processor.py can subtract genuine insertions from its own
+    # recognized-word tally before comparing it to the passage length.
+    _last_insertion_count: int = field(default=0, init=False)
     _final_result: AlignmentResult | None = field(default=None, init=False)
     _questions: list[ComprehensionQuestion] = field(default_factory=list, init=False)
     # True once the CURRENT question has already been given one retry - a
@@ -166,6 +180,14 @@ class TutorSession:
     @property
     def reference_words(self) -> list[str]:
         return self.passage["words"]
+
+    @property
+    def insertion_count(self) -> int:
+        """Genuine extra words recognized so far that aren't in the
+        passage at all, per the most recent alignment pass - see
+        _last_insertion_count's own comment for why tutor_processor.py
+        needs this to detect real end-of-passage progress correctly."""
+        return self._last_insertion_count
 
     # ---------------------------------------------------------------- reading
 
@@ -211,6 +233,12 @@ class TutorSession:
         result = await asyncio.to_thread(
             _align_current, self.reference_words[:window_end], self._recognized_events
         )
+        # Recomputed fresh (not accumulated) every call, over every
+        # recognized event so far - not lagged behind the settle-lookahead
+        # window the way _settled_miscues is, so tutor_processor.py always
+        # sees the real current insertion count, including ones spoken in
+        # just the last word or two.
+        self._last_insertion_count = result.insertion_count
         settle_cutoff = len(self._recognized_events) - SETTLE_LOOKAHEAD
 
         out_events: list[dict] = []
@@ -358,6 +386,10 @@ class TutorSession:
     async def start_comprehension(self, *, num_questions: int = 3) -> str:
         """Strong-tier call: generate 2-3 questions grounded in the passage
         text, transition to COMPREHENSION, and return the first question.
+
+        Passes the passage's declared `skills` through so a question can be
+        tagged with one of its vocabulary skills, not just a comprehension
+        one - see claude_client._eligible_question_skill_ids.
         """
         if self.state is not TutorState.PASSAGE_DONE:
             raise RuntimeError(f"start_comprehension called in state {self.state}")
@@ -365,6 +397,7 @@ class TutorSession:
         self._questions = await self.llm_client.generate_questions(
             passage_text=self.passage["text"],
             hint_topics=self.passage.get("comprehension_hint_topics", []),
+            passage_skills=self.passage.get("skills", []),
             num_questions=num_questions,
         )
         if not self._questions:

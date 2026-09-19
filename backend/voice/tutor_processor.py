@@ -67,7 +67,7 @@ from claude_client import TutorLLMClient  # noqa: E402
 from state_machine import TutorSession, TutorState  # noqa: E402
 
 from loguru import logger
-from pipecat.frames.frames import Frame, StartFrame, TranscriptionFrame, TTSSpeakFrame
+from pipecat.frames.frames import ErrorFrame, Frame, StartFrame, TranscriptionFrame, TTSSpeakFrame
 from pipecat.processors.frameworks.rtvi import RTVIProcessor
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
@@ -101,6 +101,20 @@ SESSION_CLOSING_TEMPLATE = (
 REVIEW_INTRO = "Nice reading! Let's practice a couple of words before we talk about the story."
 REVIEW_CORRECT = "That's it! Nice work."
 REVIEW_TRY_AGAIN = "Good try - let's keep going."
+# Real gap from a prior audit: Pipecat's own FrameProcessor already catches
+# an unhandled exception raised out of process_frame() and turns it into an
+# ErrorFrame automatically (see pipecat.processors.frame_processor's
+# __process_frame) - but that frame only travels UPSTREAM, away from
+# Cartesia TTS, and nothing downstream of the exception's own processor ever
+# spoke a word about it. A Claude API call failing mid-comprehension-turn
+# (see claude_client.py's own timeout/retry fix, the other half of this same
+# audit finding) used to leave the child sitting in total silence forever:
+# no exception ever crashed the process, no TTSSpeakFrame ever told them
+# anything went wrong - a hang, not a crash. This line is deliberately
+# generic (not "let's try that question again") since by the time this
+# fires we only know *something* broke, not which step of the state machine
+# it broke in.
+ERROR_RECOVERY_TEXT = "Sorry, I got a little mixed up - let's keep going!"
 
 
 class TutorProcessor(FrameProcessor):
@@ -135,20 +149,23 @@ class TutorProcessor(FrameProcessor):
         self._student_id = student_id
         self._rtvi = rtvi
         self._latency_observer = latency_observer
-        # Real per-word STT delay, computed from timestamps this pipeline
-        # already has on hand - see _handle_reading_turn. Pipecat's own STT
-        # TTFB metric (what LatencyObserver watches for) needs a real
-        # VADUserStoppedSpeakingFrame to ever start its timer, which this
-        # pipeline deliberately doesn't emit (see this module's own
-        # docstring on turn-taking) - it always comes back as an untrue
-        # 0.0, a real gap found and root-caused, not a bug in the observer
-        # itself (see docs/BUILD_LOG.md). Every word_recognized event
-        # already carries both `t` (this pipeline's own clock, the instant
-        # we found out about the word) and `end_ms` (Deepgram's own
-        # timestamp, relative to the same STT-connection-open zero point,
-        # for when that word's audio actually ended) - their difference is
-        # a real, honest "how long after the child finished this word did
-        # we find out" delay, with no VAD involved at all.
+        # Real per-batch STT delay, computed from timestamps this pipeline
+        # already has on hand - see _handle_reading_turn and
+        # _record_stt_delay. Pipecat's own STT TTFB metric (what
+        # LatencyObserver watches for) needs a real VADUserStoppedSpeakingFrame
+        # to ever start its timer, which this pipeline deliberately doesn't
+        # emit (see this module's own docstring on turn-taking) - it always
+        # comes back as an untrue 0.0, a real gap found and root-caused, not
+        # a bug in the observer itself (see docs/BUILD_LOG.md). One sample
+        # per Deepgram-finalized batch: `t` (this pipeline's own clock, the
+        # instant we found out about the batch) minus the batch's last
+        # word's `end_ms` (Deepgram's own timestamp, relative to the same
+        # STT-connection-open zero point, for when that word's audio
+        # actually ended) is a real, honest "how long after the child
+        # finished speaking did we find out" delay, with no VAD involved at
+        # all. Sampling every word in the batch against the same arrival
+        # instant, not just the last one, was a real bug found live (see
+        # docs/BUILD_LOG.md) - it measured position-in-batch, not latency.
         self._stt_delay_samples_ms: list[float] = []
         self._session = TutorSession(
             passage=passage,
@@ -164,11 +181,43 @@ class TutorProcessor(FrameProcessor):
         if isinstance(frame, StartFrame) and not self._clock.started:
             self._clock.start()
 
+        if isinstance(frame, ErrorFrame):
+            # An ErrorFrame arriving HERE (as opposed to one raised out of
+            # this processor's own code below, which never comes back to
+            # this method - see push_error's own upstream-only routing) came
+            # from a neighboring processor's exception, e.g. Cartesia TTS or
+            # Deepgram STT failing outright. Speak the same recovery line and
+            # keep forwarding it upstream unchanged - this only adds a
+            # spoken response, it doesn't intercept whatever pipeline-level
+            # handling (ProcessorUnusablePolicy, observers) the frame was
+            # already on its way to.
+            await self._speak_recovery_line(frame.error)
+            await self.push_frame(frame, direction)
+            return
+
         if isinstance(frame, TranscriptionFrame):
-            await self._handle_transcription(frame)
+            try:
+                await self._handle_transcription(frame)
+            except Exception as e:
+                # The actual "Claude hiccup mid-comprehension-turn" case this
+                # fixes: letting this propagate would hit pipecat's own
+                # generic exception handling in FrameProcessor.__process_frame,
+                # which converts it to an ErrorFrame and pushes it UPSTREAM
+                # (see this class's own ErrorFrame branch above) - away from
+                # TTS, so the child would never hear anything and the state
+                # machine's own turn would just sit wherever it broke,
+                # unresponsive to further speech. Catching it here instead
+                # means we can both speak immediately AND still tell the rest
+                # of the pipeline something went wrong.
+                await self._speak_recovery_line(f"error handling transcription: {e!r}")
+                await self.push_error(str(e), exception=e)
             return  # consumed here; nothing downstream needs the raw transcript
 
         await self.push_frame(frame, direction)
+
+    async def _speak_recovery_line(self, error_text: str) -> None:
+        logger.error(f"TutorProcessor: pipeline error, recovering with a spoken line: {error_text}")
+        await self.push_frame(TTSSpeakFrame(text=ERROR_RECOVERY_TEXT, append_to_context=False))
 
     async def announce_passage(self) -> None:
         """Emit `passage_loaded` (contracts/voice_events.md) with the exact
@@ -198,6 +247,25 @@ class TutorProcessor(FrameProcessor):
 
     async def _handle_reading_turn(self, frame: TranscriptionFrame) -> None:
         words = self._words_of(frame)
+        # Real bug found live (see docs/BUILD_LOG.md): one Deepgram
+        # TranscriptionFrame finalizes a whole utterance at once, often
+        # several words together, not one word per network round trip. The
+        # old code sampled a "delay" for every word in that batch against
+        # the same arrival instant - only the batch's own last word (whose
+        # audio just barely finished) reflects real STT latency; every
+        # earlier word in the same batch reads out an artificially small or
+        # exactly-zero delay purely because it's earlier in the batch, not
+        # because STT was actually fast for it. With most real speech
+        # batching multiple words per finalization, those structural
+        # near-zero samples outnumbered the real ones and dragged the
+        # session's own median down to 0 - real per-session numbers, not a
+        # display bug, confirmed against this project's own database.
+        # Sampling once per batch, from its last word, is what "how long
+        # after the audio actually finished did we get this batch" means.
+        if words:
+            self._record_stt_delay(
+                {"t": self._clock.now_ms(), "end_ms": words[-1]["end_ms"]}
+            )
         for w in words:
             event = word_recognized(
                 self._clock,
@@ -206,7 +274,6 @@ class TutorProcessor(FrameProcessor):
                 end_ms=w["end_ms"],
                 confidence=w["confidence"],
             )
-            self._record_stt_delay(event)
             await self._emit(event)
             # Purely visual now (live word-by-word highlighting) - no hint is
             # ever spoken from here anymore, see state_machine.py's REVIEW.
@@ -214,22 +281,39 @@ class TutorProcessor(FrameProcessor):
                 await self._emit(e)
         self._recognized_count += len(words)
 
-        if self._recognized_count >= len(self._passage["words"]):
+        # Real bug found live (see docs/BUILD_LOG.md and state_machine.py's
+        # own comment on TutorSession.insertion_count): comparing raw
+        # Deepgram word count against the passage's own word count treats a
+        # genuine insertion (an extra word the child said that isn't in the
+        # passage at all - a real, already-modeled miscue type, not an edge
+        # case) as real progress through the passage. A child who repeated
+        # a phrase, said a filler word, or had a stray word misrecognized
+        # could reach the passage's real word count - and trigger
+        # _finish_reading, ending the reading turn - well before actually
+        # finishing it, silently cutting off all further live highlighting
+        # for the rest of the read. Subtracting genuine insertions gives
+        # real progress through the reference passage instead of raw
+        # recognized-word volume.
+        effective_progress = self._recognized_count - self._session.insertion_count
+        if effective_progress >= len(self._passage["words"]):
             await self._finish_reading()
 
-    def _record_stt_delay(self, word_event: dict) -> None:
-        """Real per-word STT delay from data this pipeline already has, no
+    def _record_stt_delay(self, batch_event: dict) -> None:
+        """Real per-batch STT delay from data this pipeline already has, no
         VAD required - see __init__'s comment on why this exists instead of
         relying on Pipecat's own (permanently-zero, here) STT TTFB metric.
+        One sample per Deepgram-finalized batch (see _handle_reading_turn's
+        own comment on why it's the batch's last word, not every word in
+        it, that gets timed).
 
         `t` and `end_ms` are both relative to the same STT-connection-open
         zero point (see voice_events.word_recognized's own docstring), so
         their difference is a real elapsed delay, not two incomparable
         clocks - a negative value would mean that assumption broke for this
-        one word (clock skew, an out-of-order frame), so it's discarded
+        one batch (clock skew, an out-of-order frame), so it's discarded
         rather than recorded as a nonsensical negative "delay".
         """
-        delay_ms = word_event["t"] - word_event["end_ms"]
+        delay_ms = batch_event["t"] - batch_event["end_ms"]
         if delay_ms >= 0:
             self._stt_delay_samples_ms.append(delay_ms)
 
@@ -303,21 +387,59 @@ class TutorProcessor(FrameProcessor):
     async def _finish_session(self) -> None:
         closing_text = SESSION_CLOSING_TEMPLATE.format(title=self._passage.get("title", "this story"))
         await self.push_frame(TTSSpeakFrame(text=closing_text, append_to_context=False))
-        session_id_event = {"type": "session_ended", "t": self._clock.now_ms()}
-        await self._emit(session_id_event)
 
+        # Real contract violation found by an audit, fixed here:
+        # `session_ended` (contracts/voice_events.md) must carry `session_id`,
+        # `passage_id`, and `pipeline_latency_ms` - this used to emit only
+        # {type, t}. `passage_id` was always trivially available
+        # (self._passage["id"]); `session_id` is the hard part, because it
+        # doesn't exist anywhere until mastery-engineer's `/sessions` POST
+        # mints it server-side (backend/mastery/main.py's ingest_session) -
+        # which used to happen entirely AFTER this event had already gone
+        # out. Awaiting post_completed_session BEFORE building/emitting the
+        # event, instead of firing-and-forgetting it afterward, is the fix:
+        # by the time session_ended is built below, the real id (or the real
+        # "it didn't persist" answer) is already known.
+        #
+        # This does NOT block the child's actual experience on the mastery
+        # service: the closing TTSSpeakFrame above is already pushed, so
+        # they're already hearing "you've finished..." while this awaits.
+        # Only the session_ended *event* (consumed by the frontend/other
+        # backend services, never spoken) waits on it, and that wait is
+        # bounded by post_completed_session's own 3s httpx timeout - not an
+        # unbounded hang.
+        #
+        # mastery_client.post_completed_session is itself best-effort: on a
+        # timeout, connection error, or non-2xx it logs a warning and
+        # returns None rather than raising (see its own docstring). Sending
+        # session_id: None in that case - rather than retrying, blocking
+        # longer, or crashing the pipeline - is the deliberate choice: a
+        # slow/down mastery service after the child's reading session is
+        # already over must not turn into a worse experience than "this one
+        # session's bookkeeping event has no id."
+        latency = self._collect_pipeline_latency_ms()
+        session_id = None
         if self._student_id is not None:
             columns = self._session.to_session_columns()
-            latency = self._collect_pipeline_latency_ms()
             if latency:
                 columns["pipeline_latency_ms"] = latency
-            await post_completed_session(
+            session_id = await post_completed_session(
                 student_id=self._student_id,
                 passage_id=self._passage["id"],
                 session_columns=columns,
             )
         else:
             logger.info("No demo student id (mastery service unreachable) - session not persisted")
+
+        event = {
+            "type": "session_ended",
+            "t": self._clock.now_ms(),
+            "session_id": session_id,
+            "passage_id": self._passage["id"],
+        }
+        if latency:
+            event["pipeline_latency_ms"] = latency
+        await self._emit(event)
 
     def _collect_pipeline_latency_ms(self) -> dict[str, float] | None:
         """Real per-stage latency for this one session (see
@@ -330,7 +452,7 @@ class TutorProcessor(FrameProcessor):
         llm_ms = getattr(self._session.llm_client, "llm_ms", None)
         if callable(llm_ms) and (value := llm_ms()) is not None:
             result["llm_ms"] = value
-        # Real per-word timestamp deltas (see _record_stt_delay) take
+        # Real per-batch timestamp deltas (see _record_stt_delay) take
         # priority - they're real data here, unlike LatencyObserver's own
         # STT figure, which needs VAD this pipeline doesn't run and so is
         # always empty. Falling back to it anyway costs nothing if this

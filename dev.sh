@@ -43,16 +43,27 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# --workers 4: this service is genuinely stateless per request (db.py opens
-# a fresh connection per call, closes it in a finally, never shares one
-# across requests) and the module-level caches it does have (mastery.py's
-# taxonomy cache, passage_selection.py's passage cache) are read-only static
-# data, one independent copy per worker - safe to run as several processes
-# rather than one, against this project's real backend (Postgres/Supabase).
-# The one real caveat, worth knowing rather than hitting by surprise: the
-# sqlite fallback path (no DATABASE_URL set) has no WAL mode configured, so
-# several worker *processes* writing concurrently there can hit real
-# "database is locked" errors under load - Postgres has no such limit.
+# --workers 4: this service holds no state that isn't safe to duplicate
+# across processes - db.py's Postgres connection pool is per-process (each
+# worker opens its own small pool against Supabase on first use, they don't
+# and can't share one across separate OS processes), and the module-level
+# caches it does have (mastery.py's taxonomy cache, passage_selection.py's
+# passage cache) are read-only static data, one independent copy per worker
+# - safe to run as several processes rather than one, against this
+# project's real backend (Postgres/Supabase).
+# Two real caveats, worth knowing rather than hitting by surprise:
+# - The sqlite fallback path (no DATABASE_URL set) has no WAL mode
+#   configured, so several worker *processes* writing concurrently there
+#   can hit real "database is locked" errors under load - Postgres has no
+#   such limit.
+# - 4 workers each get their own connection pool (db.py's _get_pg_pool),
+#   so this worker count and that pool's own maxconn are not independent
+#   choices - their product has to stay under Supabase's real concurrent-
+#   client ceiling (15, on the session-mode pooler this project's
+#   DATABASE_URL points at) or the DB itself starts refusing connections
+#   under real concurrent load. See db.py's maxconn comment for the actual
+#   incident this caused and the numbers chosen to fix it - if this
+#   worker count ever changes, that pool size needs to change with it.
 echo "Starting mastery backend on :8000..."
 (cd backend/mastery && source .venv/bin/activate && uvicorn main:app --port 8000 --workers 4) &
 PIDS+=("$!")

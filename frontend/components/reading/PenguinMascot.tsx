@@ -1,5 +1,8 @@
 "use client";
 
+import { useRef } from "react";
+import { useGSAP } from "@gsap/react";
+import gsap from "gsap";
 import type { VoiceState } from "./VoiceIndicator";
 
 // Real feedback: the reading screen's own coach presence was a single small
@@ -11,6 +14,19 @@ import type { VoiceState } from "./VoiceIndicator";
 // penguin specifically, by explicit request - distinct from the owl used
 // elsewhere as the app's own brand mark (home screen, login/signup); this
 // one is the reading screen's own energetic companion, not a rebrand.
+//
+// This one real instance - the actual reading-screen companion, the most
+// interacted-with of all of them - now runs on GSAP timelines
+// (@gsap/react's useGSAP hook) instead of CSS @keyframes. The real reason:
+// the "done" state needs a body jump immediately followed by both flippers
+// waving in a precise, coordinated sequence, and independent CSS animations
+// on separate elements can only ever approximate that by matching durations
+// by hand - a real GSAP timeline sequences it directly
+// (`.to(body,...).to(flippers,..., "<")`), which is the actual case where
+// a timeline library earns its keep over plain CSS. The map's own four
+// decorative poses below stay CSS-driven - simpler, single-part loops that
+// don't need timeline sequencing, so converting them would be real
+// busywork without a real benefit.
 
 // A second, separate set of purely decorative poses for the map's trailside
 // penguins - deliberately NOT folded into VoiceState above, since that type
@@ -39,19 +55,25 @@ import type { VoiceState } from "./VoiceIndicator";
 // blob of color) rather than color meeting color with no edge at all.
 export type PenguinPose = "wave" | "dance" | "sleep" | "sing";
 
-const BODY_DARK = "#333a4d";
-const BODY_CREAM = "#fdfbf5";
-const BEAK = "#f5a742";
-const BEAK_SHADOW = "#e08f2e";
-const CHEEK = "#ffb4a8";
-const OUTLINE = "#1c2130";
+// Exported so other hand-drawn trail companions (see
+// components/map/TrailCompanions.tsx) can share this exact palette and
+// outline weight rather than each redefining their own slightly-different
+// version of "this app's illustration style" - a real, if subtle,
+// inconsistency two independently-eyeballed color sets would eventually
+// drift into.
+export const BODY_DARK = "#333a4d";
+export const BODY_CREAM = "#fdfbf5";
+export const BEAK = "#f5a742";
+export const BEAK_SHADOW = "#e08f2e";
+export const CHEEK = "#ffb4a8";
+export const OUTLINE = "#1c2130";
 
 // Spread as props onto every silhouette-defining shape (body, limbs, feet,
 // beak) so each one gets the exact same weight, color, and joint style of
 // outline - a mismatched outline here or there would look like more of an
 // oversight than having none at all.
-const OUTLINE_PROPS = { stroke: OUTLINE, strokeWidth: 2.5, strokeLinejoin: "round" as const };
-const OUTLINE_PROPS_SM = { stroke: OUTLINE, strokeWidth: 2, strokeLinejoin: "round" as const };
+export const OUTLINE_PROPS = { stroke: OUTLINE, strokeWidth: 2.5, strokeLinejoin: "round" as const };
+export const OUTLINE_PROPS_SM = { stroke: OUTLINE, strokeWidth: 2, strokeLinejoin: "round" as const };
 
 export default function PenguinMascot({
   state = "idle",
@@ -65,9 +87,131 @@ export default function PenguinMascot({
   if (pose) {
     return <PosePenguin pose={pose} className={className} />;
   }
+  return <StatePenguin state={state} className={className} />;
+}
+
+function StatePenguin({ state, className }: { state: VoiceState; className: string }) {
+  const bodyRef = useRef<SVGGElement>(null);
+  const eyesRef = useRef<SVGGElement>(null);
+  const beakLowerRef = useRef<SVGPathElement>(null);
+  const flipperLeftRef = useRef<SVGEllipseElement>(null);
+  const flipperRightRef = useRef<SVGEllipseElement>(null);
+  const containerRef = useRef<SVGSVGElement>(null);
+
+  useGSAP(
+    () => {
+      const body = bodyRef.current;
+      const eyes = eyesRef.current;
+      const beakLower = beakLowerRef.current;
+      const flipperLeft = flipperLeftRef.current;
+      const flipperRight = flipperRightRef.current;
+      if (!body || !eyes || !beakLower || !flipperLeft || !flipperRight) return;
+
+      // GSAP has no built-in equivalent of CSS's own `@media
+      // (prefers-reduced-motion: reduce)` - it animates regardless unless
+      // told not to, so this has to be checked by hand here instead of
+      // getting it for free the way the plain-CSS poses below still do.
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        gsap.set([body, eyes, beakLower, flipperLeft, flipperRight], { clearProps: "all" });
+        return;
+      }
+
+      // A fresh clean slate every time state changes - useGSAP's own
+      // context cleanup already kills the PREVIOUS state's tweens before
+      // this runs again, but clearProps also strips any transform value
+      // they left behind, so switching state -> state never starts from a
+      // mid-animation offset left over from whichever state was showing a
+      // moment ago.
+      gsap.set([body, eyes, beakLower, flipperLeft, flipperRight], { clearProps: "all" });
+
+      switch (state) {
+        case "idle":
+          gsap.to(body, { y: -6, duration: 1.5, ease: "sine.inOut", yoyo: true, repeat: -1 });
+          gsap.to(eyes, {
+            scaleY: 0.1,
+            transformOrigin: "center",
+            duration: 0.09,
+            repeat: -1,
+            repeatDelay: 3.5,
+            yoyo: true,
+            ease: "power1.inOut",
+          });
+          break;
+
+        case "listening":
+          gsap.to(body, {
+            rotate: 4,
+            transformOrigin: "50% 100%",
+            duration: 0.8,
+            ease: "sine.inOut",
+            yoyo: true,
+            repeat: -1,
+          });
+          gsap.to(eyes, {
+            scaleY: 0.1,
+            transformOrigin: "center",
+            duration: 0.09,
+            repeat: -1,
+            repeatDelay: 3.5,
+            yoyo: true,
+            ease: "power1.inOut",
+          });
+          break;
+
+        case "thinking":
+          gsap.to(body, {
+            rotate: 4,
+            transformOrigin: "50% 100%",
+            duration: 1.2,
+            ease: "sine.inOut",
+            yoyo: true,
+            repeat: -1,
+          });
+          break;
+
+        case "speaking":
+          gsap.to(body, { y: -4, duration: 0.3, ease: "sine.inOut", yoyo: true, repeat: -1 });
+          gsap.to(beakLower, {
+            scaleY: 0.35,
+            transformOrigin: "top center",
+            duration: 0.175,
+            ease: "sine.inOut",
+            yoyo: true,
+            repeat: -1,
+          });
+          break;
+
+        case "done": {
+          // The real reason this one is a GSAP timeline and not three more
+          // independent loops: the flipper wave has to start the instant
+          // the jump's own landing bounce finishes, not "at roughly the
+          // same time" - `"<"` positions each flipper tween at the START
+          // of the jump tween immediately before it, so the whole sequence
+          // is genuinely coordinated, not eyeballed into looking that way.
+          const tl = gsap.timeline();
+          tl.to(body, { y: -14, rotate: -6, duration: 0.18, ease: "power2.out" })
+            .to(body, { y: -14, rotate: 6, duration: 0.24, ease: "sine.inOut" })
+            .to(body, { y: 0, rotate: 0, duration: 0.24, ease: "back.out(2)" })
+            .to(
+              flipperLeft,
+              { rotate: -25, transformOrigin: "top center", duration: 0.13, repeat: 5, yoyo: true, ease: "sine.inOut" },
+              0
+            )
+            .to(
+              flipperRight,
+              { rotate: 25, transformOrigin: "top center", duration: 0.13, repeat: 5, yoyo: true, ease: "sine.inOut" },
+              0
+            );
+          break;
+        }
+      }
+    },
+    { dependencies: [state], scope: containerRef }
+  );
+
   return (
-    <svg viewBox="0 0 120 130" className={`penguin-${state} drop-shadow-sm ${className}`} aria-hidden>
-      <g className="penguin-body">
+    <svg ref={containerRef} viewBox="0 0 120 130" className={`drop-shadow-sm ${className}`} aria-hidden>
+      <g ref={bodyRef}>
         {/* feet */}
         <ellipse cx="45" cy="114" rx="10" ry="5" fill={BEAK} {...OUTLINE_PROPS_SM} />
         <ellipse cx="75" cy="114" rx="10" ry="5" fill={BEAK} {...OUTLINE_PROPS_SM} />
@@ -75,33 +219,15 @@ export default function PenguinMascot({
         <ellipse cx="60" cy="72" rx="36" ry="40" fill={BODY_DARK} {...OUTLINE_PROPS} />
         <ellipse cx="60" cy="80" rx="21" ry="28" fill={BODY_CREAM} stroke={OUTLINE} strokeWidth="1.6" />
         {/* flippers */}
-        <ellipse
-          className="penguin-flipper-left"
-          cx="25"
-          cy="64"
-          rx="8.5"
-          ry="21"
-          fill={BODY_DARK}
-          {...OUTLINE_PROPS_SM}
-          style={{ transformOrigin: "25px 46px" }}
-        />
-        <ellipse
-          className="penguin-flipper-right"
-          cx="95"
-          cy="64"
-          rx="8.5"
-          ry="21"
-          fill={BODY_DARK}
-          {...OUTLINE_PROPS_SM}
-          style={{ transformOrigin: "95px 46px" }}
-        />
+        <ellipse ref={flipperLeftRef} cx="25" cy="64" rx="8.5" ry="21" fill={BODY_DARK} {...OUTLINE_PROPS_SM} />
+        <ellipse ref={flipperRightRef} cx="95" cy="64" rx="8.5" ry="21" fill={BODY_DARK} {...OUTLINE_PROPS_SM} />
         {/* baby head-fuzz */}
         <path d="M50 18 Q60 4 70 18" stroke={BODY_DARK} strokeWidth="5" fill="none" strokeLinecap="round" />
         {/* cheeks */}
         <circle cx="40" cy="60" r="6" fill={CHEEK} opacity="0.55" />
         <circle cx="80" cy="60" r="6" fill={CHEEK} opacity="0.55" />
         {/* eyes */}
-        <g className="penguin-eyes">
+        <g ref={eyesRef}>
           <circle cx="48" cy="50" r="9.5" fill="white" stroke={OUTLINE} strokeWidth="1.4" />
           <circle cx="72" cy="50" r="9.5" fill="white" stroke={OUTLINE} strokeWidth="1.4" />
           <circle cx="49.5" cy="51.5" r="4.8" fill="#20232d" />
@@ -111,13 +237,7 @@ export default function PenguinMascot({
         </g>
         {/* beak - upper fixed, lower animates for talking */}
         <path d="M52 61 L68 61 L60 65 Z" fill={BEAK} {...OUTLINE_PROPS_SM} />
-        <path
-          className="penguin-beak-lower"
-          d="M53 65 L67 65 L60 71 Z"
-          fill={BEAK_SHADOW}
-          {...OUTLINE_PROPS_SM}
-          style={{ transformOrigin: "60px 65px" }}
-        />
+        <path ref={beakLowerRef} d="M53 65 L67 65 L60 71 Z" fill={BEAK_SHADOW} {...OUTLINE_PROPS_SM} />
       </g>
     </svg>
   );
@@ -142,7 +262,17 @@ function PosePenguin({ pose, className }: { pose: PenguinPose; className: string
 // so the raised one reads as a deliberate greeting, not a symmetrical pose.
 function WavePenguin({ className }: { className: string }) {
   return (
-    <svg viewBox="0 0 120 130" className={className} aria-hidden>
+    // Real bug found live: the raised arm and its motion arcs pull this
+    // pose's actual drawn content well right and up of center - measured
+    // directly (SVGGraphicsElement.getBBox()), its real visual center sits
+    // at (68, 59), not the (60, 65) a "0 0 120 130" viewBox assumes. Every
+    // other pose centers correctly; this is the one used most (every
+    // circle badge across the app is `pose="wave"`), so it's also the most
+    // visible one. Shifting the viewBox's own window to (8, -6) recenters
+    // the window on the real artwork without moving a single path
+    // coordinate - verified against the same measured bbox that no real
+    // content falls outside the new window on any edge.
+    <svg viewBox="8 -6 120 130" className={className} aria-hidden>
       <g className="penguin-body">
         <ellipse cx="45" cy="114" rx="10" ry="5" fill={BEAK} {...OUTLINE_PROPS_SM} />
         <ellipse cx="75" cy="114" rx="10" ry="5" fill={BEAK} {...OUTLINE_PROPS_SM} />
@@ -246,7 +376,12 @@ function DancePenguin({ className }: { className: string }) {
 // resting lines instead of the standing character's round open ones.
 function SleepPenguin({ className }: { className: string }) {
   return (
-    <svg viewBox="0 0 120 130" className={className} aria-hidden>
+    // Real bug found live, measured the same way as WavePenguin's own fix
+    // above: lying on its back pulls this pose's real content well below
+    // center - its real visual center sits at (60, 79), not the (60, 65) a
+    // "0 0 120 130" viewBox assumes. Shifting the window down by the same
+    // 14px recenters it without moving any path coordinate.
+    <svg viewBox="0 14 120 130" className={className} aria-hidden>
       {/* pillow, drawn first so the head overlaps its near edge */}
       <ellipse cx="28" cy="78" rx="20" ry="13" fill="#fef3c7" stroke={OUTLINE} strokeWidth="2" />
       <g className="penguin-body">
@@ -276,7 +411,12 @@ function SleepPenguin({ className }: { className: string }) {
 // floating music-note badge next to it adds the rest.
 function SingPenguin({ className }: { className: string }) {
   return (
-    <svg viewBox="0 0 120 130" className={className} aria-hidden>
+    // Real bug found live, measured the same way as WavePenguin's own fix
+    // above: the raised mic arm shifts this pose's real content slightly
+    // up of center - its real visual center sits at (61, 59), not the
+    // (60, 65) a "0 0 120 130" viewBox assumes. A smaller shift than
+    // wave/sleep needed, but real and worth the same fix for consistency.
+    <svg viewBox="0 -6 120 130" className={className} aria-hidden>
       <g className="penguin-body">
         <ellipse cx="45" cy="114" rx="10" ry="5" fill={BEAK} {...OUTLINE_PROPS_SM} />
         <ellipse cx="75" cy="114" rx="10" ry="5" fill={BEAK} {...OUTLINE_PROPS_SM} />

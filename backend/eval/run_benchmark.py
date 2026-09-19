@@ -18,6 +18,14 @@ configured in backend/voice/.env) and take a couple of minutes and a modest
 amount of real API spend - this is intentional per this agent's role brief:
 the numbers need to be real and defensible, not decorative.
 
+Steps 2 and 3 each internally re-run their own real-Claude-call trials
+multiple times (`groundedness_eval.NUM_TRIALS`, `latency_eval.NUM_TRIALS`)
+and report a mean plus the observed min/max range, not a single point
+estimate - a fresh audit found real, measured run-to-run variance in both
+(skill-tagging accuracy read 66.7%/73.3%/100% across identical runs; hint
+P95 swung 11.6s-19.7s), so a bare single number was misleading. Diagnostic
+accuracy (step 1) is deterministic and free, so it stays a single run.
+
 Writes:
   reports/eval_report.json   - full machine-readable report (also what
                                 server.py's GET /admin/eval_report serves)
@@ -44,6 +52,15 @@ import report as report_lib  # noqa: E402
 REPORTS_DIR = Path(__file__).resolve().parent / "reports"
 
 
+def _pct(stat: dict | None) -> str:
+    """Format a `report_lib.mean_range()` result as e.g. "90.2% (range:
+    86.3-94.1%)" for the stderr progress prints. `n/a` for `None`.
+    """
+    if stat is None:
+        return "n/a"
+    return f"{stat['mean']:.1%} (range: {stat['min']:.1%}-{stat['max']:.1%})"
+
+
 def build_report() -> dict:
     env_setup.load_real_api_keys()
 
@@ -52,17 +69,26 @@ def build_report() -> dict:
     print(f"      {diagnostic['passed']}/{diagnostic['sample_size']} cases passed "
           f"({diagnostic['accuracy']:.1%})", file=sys.stderr)
 
-    print("[2/3] Question groundedness (real Claude generation + real Claude LLM-judge)...", file=sys.stderr)
+    print(f"[2/3] Question groundedness (real Claude generation + real Claude LLM-judge, "
+          f"{groundedness_eval.NUM_TRIALS} independent trials)...", file=sys.stderr)
     groundedness = groundedness_eval.run_groundedness_eval()
-    print(f"      {groundedness['grounded_count']}/{groundedness['sample_size']} questions grounded "
-          f"({groundedness['groundedness']:.1%})", file=sys.stderr)
+    print(f"      most recent trial: {groundedness['grounded_count_last_trial']}/{groundedness['sample_size']} "
+          f"questions grounded; mean across {groundedness['trials_run']} trials: "
+          f"{_pct(groundedness['groundedness'])}", file=sys.stderr)
+    if groundedness.get("skill_tagging_accuracy") is not None:
+        print(f"      most recent trial: {groundedness['skill_tagging_matches_last_trial']}/"
+              f"{groundedness['skill_tagging_checkable']} passages had their designed skill correctly "
+              f"tagged; mean across {groundedness['trials_run']} trials: "
+              f"{_pct(groundedness['skill_tagging_accuracy'])}", file=sys.stderr)
 
-    print("[3/3] Latency (real Claude calls through the real TutorSession pipeline)...", file=sys.stderr)
+    print(f"[3/3] Latency (real Claude calls through the real TutorSession pipeline, "
+          f"{latency_eval.NUM_TRIALS} independent trials)...", file=sys.stderr)
     latency = latency_eval.run_latency_eval()
-    print(f"      {latency['sessions_run']} synthetic sessions run", file=sys.stderr)
+    print(f"      {latency['sessions_run']} synthetic sessions run across {latency['trials_run']} trials",
+          file=sys.stderr)
 
-    raw = latency["raw_samples_ms"]
-    session_llm_totals = [s["session_total_llm_ms"] for s in latency["per_session"]]
+    raw = latency["raw_samples_ms"]  # pooled across every trial
+    raw_by_trial = latency["raw_samples_ms_by_trial"]  # kept separate per trial for percentile-of-percentile stats
     # Real bug found by actually asking why "it feels instantaneous when I
     # try it" didn't match this report's own headline llm_ms figure (see
     # docs/BUILD_LOG.md): `latency_percentiles.p50_ms/p95_ms.llm_ms` is read
@@ -80,7 +106,38 @@ def build_report() -> dict:
     # own latency (hint + question-generation + grading, flattened) instead
     # keeps this field genuinely comparable to stt_ms/tts_ms; the session
     # total is kept too, just surfaced separately under its own real name.
-    per_call_llm_samples = raw["hint_ms"] + raw["question_generation_ms"] + raw["grading_ms"]
+    #
+    # A second real finding from the multi-trial audit (see report.mean_range
+    # and groundedness_eval.py's/latency_eval.py's own docstrings): a P95
+    # computed once from a single run's samples is itself noisy run to run
+    # (hint-generation P95 was seen to swing 11.6s -> 19.7s across otherwise
+    # identical runs). So rather than pooling every trial's raw samples into
+    # one giant list and taking ONE percentile of that (which would still
+    # hide how much a single run's P95 can move), each trial's own percentile
+    # is computed separately below and the mean + observed range across
+    # trials is what actually gets reported.
+    def _pooled_per_call(trial_raw: dict) -> list[float]:
+        return trial_raw["hint_ms"] + trial_raw["question_generation_ms"] + trial_raw["grading_ms"]
+
+    llm_p50_by_trial = [report_lib.percentile(_pooled_per_call(t), 50) for t in raw_by_trial]
+    llm_p95_by_trial = [report_lib.percentile(_pooled_per_call(t), 95) for t in raw_by_trial]
+    llm_p50_stats = report_lib.mean_range(llm_p50_by_trial)
+    llm_p95_stats = report_lib.mean_range(llm_p95_by_trial)
+
+    def _stage_stats(key: str) -> tuple[dict | None, dict | None]:
+        p50_by_trial = [report_lib.percentile(t[key], 50) for t in raw_by_trial]
+        p95_by_trial = [report_lib.percentile(t[key], 95) for t in raw_by_trial]
+        return report_lib.mean_range(p50_by_trial), report_lib.mean_range(p95_by_trial)
+
+    hint_p50_stats, hint_p95_stats = _stage_stats("hint_ms")
+    question_gen_p50_stats, question_gen_p95_stats = _stage_stats("question_generation_ms")
+    grading_p50_stats, grading_p95_stats = _stage_stats("grading_ms")
+
+    session_totals_by_trial: dict[int, list[float]] = {}
+    for s in latency["per_session"]:
+        session_totals_by_trial.setdefault(s["trial"], []).append(s["session_total_llm_ms"])
+    session_p50_by_trial = [report_lib.percentile(v, 50) for v in session_totals_by_trial.values()]
+    session_p95_by_trial = [report_lib.percentile(v, 95) for v in session_totals_by_trial.values()]
 
     flags = [
         "api_contract.md's GET /admin/eval_report response shape was left "
@@ -129,10 +186,33 @@ def build_report() -> dict:
         "open and wrongly flipped 'basket'/'goblin' to open_syllables as a "
         "result, so that path was deliberately left out rather than traded "
         "for a new regression.",
+        "RESOLVED (was: skill-tagging accuracy, question groundedness, and "
+        "hint-generation P95 latency were all reported as single-run point "
+        "estimates despite real, measured run-to-run variance from live "
+        "Claude calls - a fresh audit saw skill-tagging accuracy read "
+        "66.7%, 73.3%, and 100% across identical re-runs, and hint P95 "
+        "swing 11.6s-19.7s). groundedness_eval.py and latency_eval.py now "
+        "each run their real-Claude-call trials multiple times "
+        "(NUM_TRIALS = 3 and 2 respectively - kept small deliberately, "
+        "since these are real, billed API calls) and report a mean plus "
+        "the observed min/max range via the new report.mean_range() "
+        "helper, surfaced in *_detail keys below and in eval_summary.txt. "
+        "Diagnostic accuracy is untouched: it is deterministic and free, "
+        "so a single run is already exact, not an estimate.",
     ]
 
     diagnostic_accuracy = diagnostic["accuracy"]
-    question_groundedness = groundedness["groundedness"]
+    # Top-level contract numbers for the two LLM-dependent metrics are the
+    # MEAN across trials (a single real float, so backend/mastery/main.py's
+    # dashboard consumer - which reads these as plain numbers, e.g. for its
+    # own fallback-threshold comparison - keeps working unchanged). The
+    # observed range across trials lives in *_detail below; render_summary
+    # and the README present both, per this fix's whole point: don't hide
+    # the spread, but also don't break a numeric contract consumer that
+    # reasonably expects one comparable float.
+    question_groundedness = groundedness["groundedness"]["mean"] if groundedness["groundedness"] else None
+    llm_p95_mean = llm_p95_stats["mean"] if llm_p95_stats else None
+    llm_p50_mean = llm_p50_stats["mean"] if llm_p50_stats else None
 
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -141,40 +221,43 @@ def build_report() -> dict:
         "question_groundedness": question_groundedness,
         "latency_percentiles": {
             # llm_ms here is a per-CALL figure (every individual hint/
-            # question-generation/grading call, pooled) - the same kind of
-            # number stt_ms/tts_ms are, and the one backend/mastery/main.py
-            # actually uses as a real dashboard fallback. It is NOT "how
-            # long a whole session's worth of chained calls adds up to" -
-            # see session_total_llm_ms_percentiles below for that number.
-            "p50_ms": {
-                "stt_ms": None,
-                "llm_ms": report_lib.percentile(per_call_llm_samples, 50),
-                "tts_ms": None,
-            },
-            "p95_ms": {
-                "stt_ms": None,
-                "llm_ms": report_lib.percentile(per_call_llm_samples, 95),
-                "tts_ms": None,
-            },
+            # question-generation/grading call, pooled per trial then
+            # averaged across trials) - the same kind of number stt_ms/
+            # tts_ms are, and the one backend/mastery/main.py actually uses
+            # as a real dashboard fallback. It is NOT "how long a whole
+            # session's worth of chained calls adds up to" - see
+            # session_total_llm_ms_percentiles below for that number. It is
+            # also a MEAN across independent trials, not one run's number -
+            # see latency_percentiles_detail for the observed range.
+            "p50_ms": {"stt_ms": None, "llm_ms": llm_p50_mean, "tts_ms": None},
+            "p95_ms": {"stt_ms": None, "llm_ms": llm_p95_mean, "tts_ms": None},
         },
         # Additional detail beyond the contract's minimum, for the demo/README:
         "diagnostic_accuracy_detail": diagnostic,
         "question_groundedness_detail": {k: v for k, v in groundedness.items() if not k.startswith("_")},
+        "latency_percentiles_detail": {
+            "trials_run": latency["trials_run"],
+            "p50_ms_llm": llm_p50_stats,
+            "p95_ms_llm": llm_p95_stats,
+        },
         "latency_by_stage_ms": {
             "hint_generation": {
                 "n": len(raw["hint_ms"]),
-                "p50_ms": report_lib.percentile(raw["hint_ms"], 50),
-                "p95_ms": report_lib.percentile(raw["hint_ms"], 95),
+                "trials_run": latency["trials_run"],
+                "p50_ms": hint_p50_stats,
+                "p95_ms": hint_p95_stats,
             },
             "question_generation": {
                 "n": len(raw["question_generation_ms"]),
-                "p50_ms": report_lib.percentile(raw["question_generation_ms"], 50),
-                "p95_ms": report_lib.percentile(raw["question_generation_ms"], 95),
+                "trials_run": latency["trials_run"],
+                "p50_ms": question_gen_p50_stats,
+                "p95_ms": question_gen_p95_stats,
             },
             "answer_grading": {
                 "n": len(raw["grading_ms"]),
-                "p50_ms": report_lib.percentile(raw["grading_ms"], 50),
-                "p95_ms": report_lib.percentile(raw["grading_ms"], 95),
+                "trials_run": latency["trials_run"],
+                "p50_ms": grading_p50_stats,
+                "p95_ms": grading_p95_stats,
             },
         },
         # A whole scripted session's worth of LLM calls, summed back to
@@ -186,8 +269,9 @@ def build_report() -> dict:
         # session feels," which is why it is its own separate, clearly
         # named field rather than sharing latency_percentiles.llm_ms's slot.
         "session_total_llm_ms_percentiles": {
-            "p50_ms": report_lib.percentile(session_llm_totals, 50),
-            "p95_ms": report_lib.percentile(session_llm_totals, 95),
+            "trials_run": latency["trials_run"],
+            "p50_ms": report_lib.mean_range(session_p50_by_trial),
+            "p95_ms": report_lib.mean_range(session_p95_by_trial),
         },
         "latency_sessions_run": latency["sessions_run"],
         "latency_note": (

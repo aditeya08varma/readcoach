@@ -1,27 +1,99 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Soft warm neutral, not stark white - every real page now sets its own
+  /* Soft warm neutral, not stark white and not shadcn init's own generic
+     oklch white/near-black defaults - every real page sets its own
      full-length gradient background (see docs/BUILD_LOG.md), but on a
      screen taller than a given page's real content, this is what shows
      below it. A gentle, on-theme neutral reads as "the page finished
      naturally" instead of "hit a wall of white". */
   --background: #fdfaf5;
   --foreground: #171717;
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  /* shadcn init overwrote this with `var(--font-sans)` - a self-reference
+     that resolves to nothing, silently dropping every font-sans utility
+     (including html's own `font-sans` below) back to the browser default
+     serif. Restored to the real Geist mapping this app already loads in
+     layout.tsx. */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-kid: var(--font-baloo);
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  --font-classy: var(--font-fraunces);
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 @keyframes waveform {
@@ -152,6 +224,34 @@ body {
     0 0px 0 var(--btn-shadow),
     0 3px 8px rgba(2, 6, 23, 0.14);
 }
+/* Real gap found tabbing to this specific button: the global
+   *:focus-visible outline (see @layer base below) IS applied here per
+   computed styles, but reads as invisible in practice. This element is the
+   one place in the app combining a large layered box-shadow (the 3D
+   "depth" effect above) with a CSS transform on press - exactly the
+   combination that makes outline rendering unreliable across browsers
+   (Safari in particular can paint an element's own box-shadow over its
+   outline once a transform is present). A box-shadow-based ring sidesteps
+   that entirely: it composites in the same paint step as the button's own
+   3D shadow instead of fighting it, so it's guaranteed visible everywhere
+   outline wasn't. outline is turned off here to avoid a faint double ring
+   from the still-matching global rule; the :active variant keeps the ring
+   through a press so it doesn't blink out on Enter/Space. */
+.btn-3d:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 3px #fff,
+    0 0 0 6px #ec4899,
+    0 6px 0 var(--btn-shadow),
+    0 10px 18px rgba(2, 6, 23, 0.16);
+}
+.btn-3d:focus-visible:active:not(:disabled) {
+  box-shadow:
+    0 0 0 3px #fff,
+    0 0 0 6px #ec4899,
+    0 0px 0 var(--btn-shadow),
+    0 3px 8px rgba(2, 6, 23, 0.14);
+}
 .btn-3d-amber {
   --btn-shadow: #b45309;
 }
@@ -209,21 +309,15 @@ body {
     box-shadow: 0 0 0 8px rgba(245, 158, 11, 0);
   }
 }
-/* The map's own path drawing itself in, top to bottom, node by node on
-   load - the single biggest thing separating a real skill-tree screen from
-   a static list is that the path feels like it unrolls in front of you.
-   Each node wrapper gets a per-index animation-delay set inline in
-   StoryMapView.tsx; this just defines the motion itself. */
-@keyframes path-step-in {
-  0% {
-    opacity: 0;
-    transform: translateY(14px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
+/* The map's own path drawing itself in, top to bottom, node by node as you
+   scroll to it, used to be this plain CSS keyframe (animate-on-mount, once,
+   regardless of scroll position - meaning every node on a long page had
+   already finished "drawing in" before a phone-width scroll ever reached
+   it). Replaced by a real Framer Motion whileInView spring in
+   StoryMapView.tsx, which actually triggers per node as it enters view -
+   framer-motion also owns its own prefers-reduced-motion handling there
+   (useReducedMotion), so nothing needs registering in either media block
+   below anymore. */
 @media (prefers-reduced-motion: no-preference) {
   .floaty {
     animation: floaty 6s ease-in-out infinite;
@@ -231,17 +325,18 @@ body {
   .here-pulse {
     animation: here-pulse 2s ease-in-out infinite;
   }
-  .path-step-in {
-    animation: path-step-in 0.5s ease-out both;
-  }
 }
 
 /* Reading screen's penguin mascot (components/reading/PenguinMascot.tsx) -
    real feedback that the reading screen felt bland next to the rest of the
-   app. Each SVG part animates independently (transform-box: fill-box so
-   transform-origin works relative to that shape's own bounds, not the
-   whole SVG viewport) so the character reads as genuinely alive rather
-   than one flat icon being bounced as a whole. */
+   app. That real, state-driven version (idle/listening/thinking/speaking/
+   done) now runs on GSAP timelines instead of these CSS keyframes - see
+   PenguinMascot.tsx's own comment for why (the "done" state needs a body
+   jump immediately followed by a precisely coordinated flipper wave, which
+   a real timeline sequences directly instead of approximating with
+   independent animations timed to roughly match). penguin-bob,
+   penguin-flipper-wave, and penguin-talk stay here, unremoved - the map's
+   own four decorative poses below still use all three. */
 @keyframes penguin-bob {
   0%,
   100% {
@@ -249,25 +344,6 @@ body {
   }
   50% {
     transform: translateY(-6px);
-  }
-}
-@keyframes penguin-blink {
-  0%,
-  92%,
-  100% {
-    transform: scaleY(1);
-  }
-  96% {
-    transform: scaleY(0.1);
-  }
-}
-@keyframes penguin-tilt {
-  0%,
-  100% {
-    transform: rotate(-4deg);
-  }
-  50% {
-    transform: rotate(4deg);
   }
 }
 @keyframes penguin-flipper-wave {
@@ -286,69 +362,6 @@ body {
   }
   50% {
     transform: scaleY(0.35);
-  }
-}
-@keyframes penguin-jump {
-  0%,
-  100% {
-    transform: translateY(0) rotate(0deg);
-  }
-  30% {
-    transform: translateY(-14px) rotate(-6deg);
-  }
-  60% {
-    transform: translateY(-14px) rotate(6deg);
-  }
-}
-.penguin-idle .penguin-body,
-.penguin-listening .penguin-body,
-.penguin-thinking .penguin-body,
-.penguin-speaking .penguin-body,
-.penguin-done .penguin-body {
-  transform-box: fill-box;
-}
-.penguin-idle .penguin-eyes,
-.penguin-listening .penguin-eyes {
-  transform-box: fill-box;
-  transform-origin: center;
-}
-.penguin-speaking .penguin-beak-lower {
-  transform-box: fill-box;
-}
-.penguin-done .penguin-flipper-left,
-.penguin-done .penguin-flipper-right {
-  transform-box: fill-box;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .penguin-idle .penguin-body {
-    animation: penguin-bob 3s ease-in-out infinite;
-  }
-  .penguin-idle .penguin-eyes {
-    animation: penguin-blink 4s ease-in-out infinite;
-  }
-  .penguin-listening .penguin-body {
-    animation: penguin-tilt 1.6s ease-in-out infinite;
-  }
-  .penguin-listening .penguin-eyes {
-    animation: penguin-blink 4s ease-in-out infinite;
-  }
-  .penguin-thinking .penguin-body {
-    animation: penguin-tilt 2.4s ease-in-out infinite;
-  }
-  .penguin-speaking .penguin-body {
-    animation: penguin-bob 0.6s ease-in-out infinite;
-  }
-  .penguin-speaking .penguin-beak-lower {
-    animation: penguin-talk 0.35s ease-in-out infinite;
-  }
-  .penguin-done .penguin-body {
-    animation: penguin-jump 0.6s ease-out 1;
-  }
-  .penguin-done .penguin-flipper-left {
-    animation: penguin-flipper-wave 0.4s ease-in-out 3;
-  }
-  .penguin-done .penguin-flipper-right {
-    animation: penguin-flipper-wave 0.4s ease-in-out 3 reverse;
   }
 }
 
@@ -469,6 +482,77 @@ body {
   }
 }
 
+/* The map's own three trail companions (components/map/TrailCompanions.tsx)
+   - real, separately-drawn characters, each with its own distinct motion,
+   the same principle the penguin's own poses above already established. */
+@keyframes trail-worm-wiggle {
+  0%,
+  100% {
+    transform: rotate(-4deg);
+  }
+  50% {
+    transform: rotate(4deg);
+  }
+}
+@keyframes trail-star-twinkle {
+  0%,
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    transform: scale(1.08) rotate(-4deg);
+  }
+}
+@keyframes trail-sparkle-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+@keyframes trail-cloud-drift {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+.trail-bookworm-body {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+.trail-star-body {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.trail-star-sparkle {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .trail-bookworm-body {
+    animation: trail-worm-wiggle 2.4s ease-in-out infinite;
+  }
+  .trail-star-body {
+    animation: trail-star-twinkle 2.6s ease-in-out infinite;
+  }
+  .trail-star-sparkle-a {
+    animation: trail-sparkle-pulse 1.4s ease-in-out infinite;
+  }
+  .trail-star-sparkle-b {
+    animation: trail-sparkle-pulse 1.4s ease-in-out infinite 0.7s;
+  }
+  .trail-cloud-body {
+    animation: trail-cloud-drift 4s ease-in-out infinite;
+  }
+}
+
 @keyframes card-wiggle {
   0%,
   100% {
@@ -493,18 +577,7 @@ body {
   .btn-bounce,
   .card-wiggle-icon,
   .here-pulse,
-  .path-step-in,
   .mastered-sparkle,
-  .penguin-idle .penguin-body,
-  .penguin-idle .penguin-eyes,
-  .penguin-listening .penguin-body,
-  .penguin-listening .penguin-eyes,
-  .penguin-thinking .penguin-body,
-  .penguin-speaking .penguin-body,
-  .penguin-speaking .penguin-beak-lower,
-  .penguin-done .penguin-body,
-  .penguin-done .penguin-flipper-left,
-  .penguin-done .penguin-flipper-right,
   .penguin-pose-wave .penguin-body,
   .penguin-pose-wave .penguin-flipper-right,
   .penguin-pose-dance .penguin-body,
@@ -513,8 +586,79 @@ body {
   .penguin-pose-sleep .penguin-body,
   .penguin-pose-sing .penguin-body,
   .penguin-pose-sing .penguin-beak-lower,
-  .pose-badge {
+  .pose-badge,
+  .trail-bookworm-body,
+  .trail-star-body,
+  .trail-star-sparkle-a,
+  .trail-star-sparkle-b,
+  .trail-cloud-body {
     transition: none !important;
     animation: none !important;
+  }
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+  /* Real gap found auditing keyboard navigation: `outline-ring/50` above
+     only ever sets outline-*color* - width/style were left to the browser's
+     own default focus behavior, which renders as a thin (1px), half-
+     transparent ring in that same muted gray. Technically present, but
+     functionally invisible against this app's saturated gradients and
+     already-shadowed 3D buttons, which is exactly what "no visible focus
+     ring" looks like in practice. A real, deliberately bold outline here
+     fixes every plain element app-wide (links, the reading screen's demo
+     checkbox, PlumpButton, etc.) in one place. Pink isn't used as a
+     background or accent anywhere else in the app's sky/emerald/violet/
+     amber/rose palette, so this ring stays legible on every one of them
+     instead of quietly blending into a same-hue page background.
+     Components that already ship their own real focus-visible treatment
+     (components/ui/button.tsx, select.tsx - both set outline-none plus a
+     proper ring-*) opt out of this automatically: their utility classes sit
+     in a later cascade layer than @layer base, so they simply win. */
+  *:focus-visible {
+    outline: 3px solid #ec4899;
+    outline-offset: 2px;
   }
 }

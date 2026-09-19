@@ -131,8 +131,21 @@ class ComprehensionAnswer(BaseModel):
 class IngestSessionRequest(BaseModel):
     student_id: str
     passage_id: str
-    wcpm: Optional[float] = None
-    accuracy: Optional[float] = None
+    # Real bug found live: with no bounds at all, POST /sessions accepted
+    # accuracy=5.5 and wcpm=-50 with a plain 200 OK, silently feeding
+    # garbage into the mastery EMA (mastery.py's _blend_weight_atomic
+    # documents that it relies on every caller already clamping `score` to
+    # [0, 1] - an accuracy above 1.0 or below 0.0 breaks that assumption at
+    # the source). `accuracy` is documented everywhere else in this codebase
+    # (contracts/db_schema.sql's own column comment, this file's docstrings)
+    # as a real 0..1 fraction; `wcpm` (words correct per minute) can't be
+    # negative, but has no natural upper bound worth guessing at, so it's
+    # left open-ended above 0. Both stay Optional/None-able - ge/le are
+    # simply skipped when the value is None - so older callers that don't
+    # send them keep working exactly as before; only genuinely out-of-range
+    # numbers now get a clean 422 instead of being silently accepted.
+    wcpm: Optional[float] = Field(default=None, ge=0)
+    accuracy: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     self_corrections: int = 0
     miscues: list[Miscue] = Field(default_factory=list)
     comprehension: list[ComprehensionAnswer] = Field(default_factory=list)

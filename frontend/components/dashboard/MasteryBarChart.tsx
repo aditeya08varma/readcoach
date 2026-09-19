@@ -130,12 +130,24 @@ export default function MasteryBarChart({ skills }: { skills: MasterySkill[] }) 
     // screen. Trim to fit and expose the full label via <title> instead of
     // letting it overlap the chart.
     const labelMaxWidth = margin.left - 12;
+    // Real bug at 375px: labels like "Closed Syllables" measured right at
+    // the boundary (e.g. 90.8px against a 91px allowance - under a quarter
+    // pixel of headroom), so the "does it already fit" check above passed
+    // and the string was left completely untouched. The SVG's own default
+    // overflow clipping then silently cut off its leading characters with
+    // no ellipsis, since it never entered the truncation branch at all. A
+    // razor-thin exact-fit comparison isn't safe across browsers/fonts, so
+    // fit is checked against a few px of real headroom (FIT_BUFFER), not
+    // the raw column width, guaranteeing truncation kicks in early enough
+    // to survive minor cross-browser text-measurement differences.
+    const FIT_BUFFER = 6;
+    const safeLabelWidth = labelMaxWidth - FIT_BUFFER;
     labelSelection.each(function (d) {
       const node = d3.select(this);
       const el = node.node();
-      if (!el || el.getComputedTextLength() <= labelMaxWidth) return;
+      if (!el || el.getComputedTextLength() <= safeLabelWidth) return;
       let text = d.label;
-      while (text.length > 1 && el.getComputedTextLength() > labelMaxWidth) {
+      while (text.length > 1 && el.getComputedTextLength() > safeLabelWidth) {
         text = text.slice(0, -1);
         node.text(`${text}…`);
       }

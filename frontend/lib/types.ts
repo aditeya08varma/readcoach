@@ -29,7 +29,11 @@ export interface Passage {
 export interface SelectionReason {
   target_skill_id: string | null;
   target_skill_label: string | null;
-  mode: "priority_weak" | "maintenance" | "fallback";
+  // "chosen" (a child picking their own story from the map, per
+  // backend/mastery/passage_selection.py) was missing here - see the
+  // matching note on lib/schemas.ts's SelectionReasonSchema for the real
+  // bug this caused.
+  mode: "priority_weak" | "maintenance" | "fallback" | "chosen";
   explanation: string;
 }
 

@@ -13,23 +13,7 @@ import type {
   Passage,
   SessionSummary,
   StoryMap,
-  Student,
 } from "./types";
-
-// Real gap found from a real screen recording (see docs/BUILD_LOG.md): this
-// id used to be a placeholder string that was never a real student ("demo-
-// student-1"), while backend/voice independently created and remembered a
-// completely different real demo student of its own - the dashboards could
-// never show a real voice session's results no matter how many ran, since
-// neither side ever asked about the same row. This is now the same
-// well-known, shared id both sides get-or-create via GET /students/demo on
-// the mastery service, so a real session posted by the voice bot and a
-// dashboard load from this frontend are finally talking about one student.
-export const MOCK_STUDENT: Student = {
-  id: "00000000-0000-0000-0000-000000000001",
-  display_name: "Jordan",
-  grade: 2,
-};
 
 export const MOCK_PASSAGES: Passage[] = [
   {

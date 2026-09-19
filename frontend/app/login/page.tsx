@@ -4,8 +4,10 @@ import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
+import { toast } from "sonner";
 import PlumpButton from "@/components/ui/PlumpButton";
 import PenguinMascot from "@/components/reading/PenguinMascot";
+import Logo from "@/components/ui/Logo";
 
 export default function LoginPage() {
   return (
@@ -34,42 +36,26 @@ function LoginPageInner() {
     });
     setSubmitting(false);
     if (result?.error) {
-      setError("That email or password doesn't match an account.");
+      const message = "That email or password doesn't match an account.";
+      setError(message);
+      toast.error(message);
       return;
     }
     router.push(callbackUrl);
   }
 
   return (
-    // Real feedback: this was the very first thing anyone sees, and it was
-    // a plain white card with default form fields next to an app that's
-    // otherwise fully art-directed everywhere else. Same full-bleed
-    // gradient + floaty decorations + tinted-card language as every other
-    // screen now, not a generic auth form bolted on the side.
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-b from-sky-400 via-sky-500 to-rose-400 px-4 py-12">
-      <div aria-hidden className="pointer-events-none absolute inset-0 hidden sm:block">
-        <span className="floaty absolute left-[10%] top-[12%] text-3xl opacity-70">⭐</span>
-        <span
-          className="floaty absolute right-[12%] top-[18%] text-2xl opacity-60"
-          style={{ animationDelay: "1.2s" }}
-        >
-          ✨
-        </span>
-        <span
-          className="floaty absolute left-[14%] bottom-[16%] text-2xl opacity-50"
-          style={{ animationDelay: "2.1s" }}
-        >
-          ☁️
-        </span>
-        <span
-          className="floaty absolute right-[10%] bottom-[12%] text-3xl opacity-60"
-          style={{ animationDelay: "0.6s" }}
-        >
-          📖
-        </span>
-      </div>
-
-      <div className="relative w-full max-w-sm rounded-3xl bg-sky-50/95 p-6 shadow-xl ring-2 ring-sky-200 sm:p-8">
+    // Calmed toward the dashboard's adult register: this is a parent
+    // filling out a login form, not a child on the reading screen, so it
+    // no longer gets the kid-facing full-saturation gradient and floating
+    // decorative emoji. Sky stays as this page's soft identity accent
+    // (matching the "Log in" button), just concentrated into the card and
+    // penguin circle instead of the whole background - same logic as
+    // /dashboard and /admin/engineering.
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-b from-sky-50 via-white to-sky-50 px-4 py-12">
+      <div className="relative flex w-full max-w-sm flex-col items-center">
+        <Logo size="lg" tone="dark" href={null} className="mb-6" />
+        <div className="w-full rounded-3xl bg-white p-6 shadow-xl ring-2 ring-sky-100 sm:p-8">
         <div className="mb-6 text-center">
           {/* The same penguin every other screen now has, standing in for
               the owl that used to greet a family here - one consistent
@@ -78,13 +64,13 @@ function LoginPageInner() {
           <div
             className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border-[3px] shadow-lg"
             style={{
-              background: "radial-gradient(circle at 34% 28%, #38bdf8a6, #38bdf860)",
-              borderColor: "#38bdf8",
+              background: "radial-gradient(circle at 34% 28%, #bae6fd, #e0f2fe)",
+              borderColor: "#7dd3fc",
             }}
           >
             <PenguinMascot pose="wave" className="h-14 w-14" />
           </div>
-          <h1 className="mt-2 font-[family-name:var(--font-kid)] text-2xl font-bold text-slate-800">
+          <h1 className="mt-2 font-[family-name:var(--font-classy)] text-2xl font-bold text-slate-800">
             Welcome back
           </h1>
           <p className="mt-1 text-sm text-slate-500">Log in to keep reading.</p>
@@ -93,7 +79,12 @@ function LoginPageInner() {
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
             Email
-            <div className="flex items-center gap-2 rounded-2xl border-2 border-white bg-white px-3 py-2 shadow-sm focus-within:border-sky-300">
+            {/* The real input inside has outline-none (see below) since a
+                native focus outline clipped by this rounded pill looked
+                broken - this wrapper is the real focus indicator instead: a
+                border color change plus a genuinely visible ring, not just
+                the browser default that was suppressed. */}
+            <div className="flex items-center gap-2 rounded-2xl border-2 border-white bg-white px-3 py-2 shadow-sm transition-shadow focus-within:border-sky-300 focus-within:ring-2 focus-within:ring-sky-400/70 focus-within:ring-offset-1">
               <span aria-hidden className="text-slate-400">
                 ✉️
               </span>
@@ -109,7 +100,7 @@ function LoginPageInner() {
           </label>
           <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
             Password
-            <div className="flex items-center gap-2 rounded-2xl border-2 border-white bg-white px-3 py-2 shadow-sm focus-within:border-sky-300">
+            <div className="flex items-center gap-2 rounded-2xl border-2 border-white bg-white px-3 py-2 shadow-sm transition-shadow focus-within:border-sky-300 focus-within:ring-2 focus-within:ring-sky-400/70 focus-within:ring-offset-1">
               <span aria-hidden className="text-slate-400">
                 🔒
               </span>
@@ -141,6 +132,7 @@ function LoginPageInner() {
             Create an account
           </Link>
         </p>
+        </div>
       </div>
     </main>
   );

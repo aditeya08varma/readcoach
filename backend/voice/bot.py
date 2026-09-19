@@ -25,6 +25,8 @@ import os
 from dotenv import load_dotenv
 from loguru import logger
 
+from fastapi.middleware.cors import CORSMiddleware
+from pipecat.frames.frames import TTSSpeakFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.worker import PipelineParams, PipelineWorker, ProcessorUnusablePolicy
 from pipecat.processors.frameworks.rtvi import RTVIProcessor
@@ -39,7 +41,7 @@ from pipecat.workers.runner import WorkerRunner
 
 from voice_events import SessionClock
 from mastery_client import fetch_mastery_vector, fetch_next_passage
-from tutor_processor import TutorProcessor
+from tutor_processor import ERROR_RECOVERY_TEXT, TutorProcessor
 from latency_observer import LatencyObserver, TimingLLMClient
 
 # backend/tutor is already on sys.path by the time this line runs -
@@ -91,6 +93,25 @@ _pending_passage_choice: dict[str, str] = {}
 # exactly as before login existed (see mastery_client.fetch_next_passage's
 # student_id_override).
 _pending_student_id: dict[str, str] = {}
+
+# Real, confirmed-live bug: backend/mastery/main.py's own CORS setup already
+# claimed "permissive origins here match the same choice already made for
+# the voice bot's own server... also allows '*'" - but this app never
+# actually had CORSMiddleware at all. A real browser fetch (the frontend's
+# choose_passage/choose_student/api/offer calls, all on this runner_app) to
+# a different-port origin needs an actual Access-Control-Allow-Origin
+# response header or the browser blocks it before the response body is ever
+# read - curl doesn't enforce this, which is exactly why this passed every
+# curl-based health check while failing for real in an actual browser
+# ("[Pipecat Client] Error fetching: TypeError: Failed to fetch"). Same
+# permissive "*" as mastery's own app, same justification: fine for local
+# dev/a hackathon demo, would need tightening for a real deployment.
+runner_app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @runner_app.post("/choose_passage")
@@ -237,6 +258,22 @@ async def _run_bot_session(transport: BaseTransport, runner_args: RunnerArgument
             model="nova-3-general",
             smart_format=True,
             punctuate=True,
+            # Real bug found live: neither of these was set, so Deepgram had
+            # no explicit signal to ever finalize the very last word of a
+            # passage - a mid-passage word gets finalized because more
+            # speech keeps coming after it, but the last word is followed by
+            # silence (the child is done), with nothing to trigger that
+            # finalization otherwise. tutor_processor.py's completion check
+            # (`effective_progress >= len(words)`) only runs when a new,
+            # FINAL TranscriptionFrame arrives, so an unfinalized last word
+            # means it never fires - the exact "follows me to the last word
+            # and stops there" symptom. endpointing=300 matches Deepgram's
+            # own historical default sensitivity; utterance_end_ms=1000
+            # is the newer, more reliable mechanism that explicitly forces
+            # finalization after 1s of silence regardless, which is what
+            # actually closes this gap at the true end of a passage.
+            endpointing=300,
+            utterance_end_ms=1000,
         ),
     )
 
@@ -295,8 +332,27 @@ async def _run_bot_session(transport: BaseTransport, runner_args: RunnerArgument
         logger.info("Child connected - starting session clock")
         clock.start()
         await rtvi.set_bot_ready()
-        await tutor.announce_passage()
-        await worker.queue_frames([await tutor.greet()])
+        # Real gap found by an audit, asymmetric with the mid-session path:
+        # tutor_processor.py's process_frame catches an exception from
+        # anywhere in a live turn and speaks ERROR_RECOVERY_TEXT instead of
+        # leaving the child in silence (see its own ErrorFrame/
+        # _speak_recovery_line handling) - but nothing wrapped this
+        # bootstrap call at all. An exception here (e.g.
+        # rtvi.send_server_message failing inside announce_passage()) would
+        # propagate straight out of this event handler with no spoken line,
+        # leaving a child who just connected staring at a silent bot.
+        # Reuses the exact same recovery line for one consistent "something
+        # broke" voice across the whole session - queued via
+        # worker.queue_frames rather than tutor.push_frame, matching how
+        # greet()'s own TTSSpeakFrame already reaches the pipeline from this
+        # same handler (this runs outside the frame-processing chain
+        # push_frame assumes it's part of).
+        try:
+            await tutor.announce_passage()
+            await worker.queue_frames([await tutor.greet()])
+        except Exception as e:
+            logger.error(f"bot.py: on_client_connected bootstrap failed, recovering with a spoken line: {e!r}")
+            await worker.queue_frames([TTSSpeakFrame(text=ERROR_RECOVERY_TEXT, append_to_context=False)])
 
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):

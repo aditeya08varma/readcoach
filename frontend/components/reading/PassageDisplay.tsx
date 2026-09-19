@@ -43,7 +43,21 @@ export default function PassageDisplay({
           {passage.selection_reason.explanation}
         </p>
       )}
-      <p className="mt-5 font-[family-name:var(--font-kid)] text-xl leading-loose tracking-wide text-slate-800 sm:mt-6 sm:text-2xl md:text-[1.75rem]">
+      {/* Explicit text-left, not just relying on the browser's own left-as-
+          default: a reported audit saw this render fully justified on a
+          375px phone, producing the classic large/uneven inter-word gaps on
+          short wrapped lines - bad for word-tracking for a beginning
+          reader. Live re-check here (computed text-align, and measuring the
+          actual gap between every rendered word span) found this element
+          and its whole ancestor chain already computing to plain "start"
+          with a uniform ~5px gap between every word regardless of line
+          length, so the justify itself wasn't reproducible against the
+          current build. Pinning text-left explicitly, rather than leaving
+          it to inherit the default, means that stays true regardless of
+          anything upstream (a future prose/typography wrapper, a global
+          style change) rather than depending on nobody ever setting
+          text-align on an ancestor. */}
+      <p className="mt-5 text-left font-[family-name:var(--font-kid)] text-xl leading-loose tracking-wide text-slate-800 sm:mt-6 sm:text-2xl md:text-[1.75rem]">
         {passage.words.map((word, i) => {
           const isChallengeWord = i === challengeWordIndex;
           const challengeJustCleared = isChallengeWord && challengeCleared && showChallengeCelebration;

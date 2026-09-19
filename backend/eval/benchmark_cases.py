@@ -96,6 +96,39 @@ same reason, and no clean way was found to keep one and flip the other
 without an arbitrary, hard-to-justify special case. Left open and honestly
 described as a real, unresolved disagreement between two reasonable design
 philosophies, not silently decided either way.
+
+Scope note - why this table stays phonics-only (12 categories) even though
+`content/skill_taxonomy.json` now has 27 skills, not 18
+---------------------------------------------------------------------------
+The taxonomy grew by 9 skills (word_categories, synonyms_and_antonyms,
+multiple_meaning_words, prefixes_and_suffixes_meaning, figurative_language,
+character_traits_and_analysis, compare_and_contrast, predicting_outcomes,
+authors_purpose) - all `vocabulary` or `comprehension` category, none
+`phonics`. This table and `diagnostic_eval.py` deliberately do NOT grow to
+cover them, because the mechanism they test - `backend/tutor/alignment.py`
+classifying a *word-level miscue* (a child says a different word than the
+reference) into a phonics `skill_id` via `classify_skill_for_word` - has no
+equivalent for vocabulary/comprehension skills. Nothing about "the child
+mispronounced/substituted a word" identifies a synonyms-and-antonyms or
+author's-purpose gap; those are only ever identified from the
+comprehension/vocabulary question-and-answer flow (a generated question
+tagged with a skill_id, graded right or wrong) in
+`backend/tutor/claude_client.py`'s `generate_questions`/`grade_answer`, not
+from `alignment.align()`. Forcing 9 more entries into `WORD_SKILL_TABLE`
+would mean inventing fake "textbook exemplar words" for skills that were
+never word-substitution skills in the first place - padding the count
+without testing anything real, which is exactly what this benchmark's own
+methodology (see above) exists to avoid.
+
+The real, architecturally-correct home for "does the pipeline correctly
+identify a vocabulary/comprehension skill gap" is `groundedness_eval.py`:
+it already drives the real `TutorLLMClient.generate_questions` call (the
+actual code path that assigns a comprehension/vocabulary `skill_id`) against
+real passage text, so that is where a `skill_tagging_accuracy` check for all
+9 new skills - plus the 6 pre-existing comprehension/vocabulary skills - now
+lives, scored against each passage's own authored `primary_skill` in
+`content/passages/*.json`. See that module's docstring for the full
+mechanism.
 """
 
 from __future__ import annotations

@@ -1,0 +1,38 @@
+{
+  "journey_status_by_progress": [
+    {
+      "min": 0.0,
+      "text": "Right at the start of the path, with every sound, every word, and every story still ahead."
+    },
+    {
+      "min": 0.25,
+      "text": "Past the trailhead now. The first letter sounds and patterns are starting to feel familiar."
+    },
+    {
+      "min": 0.5,
+      "text": "Halfway up the mountain. Sounds are turning into words, and words are starting to carry real meaning."
+    },
+    {
+      "min": 0.75,
+      "text": "Deep into the climb. Whole stories are starting to make sense, not just word by word."
+    },
+    {
+      "min": 0.95,
+      "text": "Near the top now, with almost every skill on this map truly learned, not just visited."
+    }
+  ],
+  "categories": {
+    "phonics": {
+      "tagline": "The trailhead: turning letters and sounds into words you can read.",
+      "milestone_text": "You've reached the end of the Phonics Path. Every sound and pattern here is one you can read on sight now, no sounding out required."
+    },
+    "vocabulary": {
+      "tagline": "The middle stretch: turning words you can read into words you understand.",
+      "milestone_text": "You've walked the whole Vocabulary Trail. Every word on it, you now know the meaning of, not just how to say out loud."
+    },
+    "comprehension": {
+      "tagline": "The summit: turning the words on a page into a whole story you understand.",
+      "milestone_text": "You've reached the top of Comprehension Summit. Every story up here, you followed and understood, start to finish."
+    }
+  }
+}

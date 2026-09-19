@@ -8,8 +8,44 @@ strictly from the passage text, not invented."
 Both the question generation and the judging are real, live Anthropic API
 calls - this is the part of the harness that costs real tokens/time, so the
 sample passages below are a deliberately chosen cross-section (phonics +
-each comprehension sub-skill, spanning grades 1-3) rather than all 20 in the
-content library.
+one passage per vocabulary/comprehension skill, spanning grades 1-3) rather
+than all 37 in the content library.
+
+Second scoring dimension - skill_tagging_accuracy
+---------------------------------------------------------------------------
+Groundedness alone ("is this question answerable from the text?") never
+checks WHICH skill a generated question was tagged with, so it can't answer
+this harness's other real question: "does the pipeline correctly identify a
+vocabulary/comprehension skill gap?" (see `benchmark_cases.py`'s scope note
+for why that check belongs here rather than in `diagnostic_eval.py` - it's
+`generate_questions`, not `alignment.align()`, that assigns these skill_ids,
+so this is the module that actually exercises the real code path being
+tested). For each sampled passage whose own authored `primary_skill` is
+`vocabulary`/`comprehension` category (i.e. not phonics - a phonics passage
+still gets ordinary comprehension questions, so checking its primary_skill
+against a comprehension `skill_id` would be a category error, not a real
+test), this module now also checks whether at least one of the
+`QUESTIONS_PER_PASSAGE` generated questions was tagged with that exact
+`skill_id`. Ground truth is each passage file's own `primary_skill` field -
+authored deliberately for the passage, not picked after seeing what the
+classifier tags, matching this harness's usual methodology.
+
+Multi-trial methodology (fix for a real audit finding)
+---------------------------------------------------------------------------
+A fresh audit re-ran this exact module against the identical code and
+sample set multiple times in one session and saw skill_tagging_accuracy
+read 66.7%, 73.3%, and 100% across those runs - real, measured LLM-call
+variance (Claude does not tag the same passage's questions identically
+every time), not a harness bug. Reporting either of the two LLM-judged
+numbers here (`groundedness`, `skill_tagging_accuracy`) as a single point
+estimate was therefore misleading. This module now runs `NUM_TRIALS` full,
+independent trials (each trial regenerates real questions and re-judges
+them with real Claude calls - genuinely repeated end-to-end, not the same
+result reused) and reports the mean plus the observed min/max range across
+trials for both numbers, via `report.mean_range`. `NUM_TRIALS = 3` per this
+agent's own role brief ("2-3 repeated trials is enough") - tripling the
+real API spend of this module is a deliberate, bounded cost for an honest
+number, not unbounded repetition.
 """
 
 from __future__ import annotations
@@ -27,24 +63,52 @@ if str(_TUTOR_DIR) not in sys.path:
 from claude_client import TutorLLMClient  # noqa: E402
 
 from judge_client import GroundednessJudge  # noqa: E402
+from report import mean_range  # noqa: E402
 
-_PASSAGES_DIR = Path(__file__).resolve().parents[2] / "content" / "passages"
+_CONTENT_DIR = Path(__file__).resolve().parents[2] / "content"
+_PASSAGES_DIR = _CONTENT_DIR / "passages"
 
 # Cross-section: a couple of phonics-primary passages plus one passage per
-# comprehension sub-skill in content/skill_taxonomy.json, spanning all three
+# vocabulary/comprehension skill in content/skill_taxonomy.json (all 6
+# vocabulary + all 9 comprehension skills, 15 total), spanning all three
 # grade bands. Chosen for coverage, not cherry-picked for easy groundedness.
 SAMPLE_PASSAGE_IDS = [
     "g1-short-vowels-001",
-    "g1-literal-comp-001",
     "g2-vowel-teams-001",
+    "g1-literal-comp-001",
     "g2-sequencing-001",
     "g2-vocab-context-001",
     "g3-cause-effect-001",
     "g3-inferential-001",
     "g3-main-idea-001",
+    # Added for the 9-skill taxonomy expansion (word_categories through
+    # authors_purpose) - one real passage per new skill, picked from
+    # content/passages/ by matching primary_skill, spanning grades 1-3.
+    "g1-word-categories-001",
+    "g2-synonyms-antonyms-002",
+    "g3-multiple-meaning-002",
+    "g2-prefixes-suffixes-001",
+    "g3-figurative-language-001",
+    "g1-character-traits-001",
+    "g3-compare-contrast-002",
+    "g1-predicting-001",
+    "g2-authors-purpose-001",
 ]
 
 QUESTIONS_PER_PASSAGE = 3
+
+# See module docstring's "Multi-trial methodology" section for why this
+# exists and why 3.
+NUM_TRIALS = 3
+
+
+def _load_skill_categories() -> dict[str, str]:
+    with open(_CONTENT_DIR / "skill_taxonomy.json", encoding="utf-8") as f:
+        taxonomy = json.load(f)
+    return {skill["id"]: skill["category"] for skill in taxonomy}
+
+
+_SKILL_CATEGORIES = _load_skill_categories()
 
 
 def _load_passage(passage_id: str) -> dict:
@@ -64,6 +128,16 @@ async def _score_one_passage(
     questions = await llm_client.generate_questions(
         passage_text=passage["text"],
         hint_topics=passage.get("comprehension_hint_topics", []),
+        # Real bug avoided by reading claude_client.py before wiring this
+        # call: generate_questions only offers a passage's declared
+        # vocabulary skill_ids (e.g. figurative_language) to the LLM as
+        # eligible tags when passage_skills is passed - omitting it would
+        # make every vocabulary-primary passage in SAMPLE_PASSAGE_IDS
+        # structurally unable to ever get its own skill tagged, which would
+        # look like a skill_tagging_accuracy failure but actually be an eval
+        # harness bug, not a pipeline one. See _eligible_question_skill_ids
+        # in claude_client.py.
+        passage_skills=passage.get("skills", []),
         num_questions=QUESTIONS_PER_PASSAGE,
     )
     latency_sink.append((time.perf_counter() - t0) * 1000)
@@ -82,25 +156,35 @@ async def _score_one_passage(
         for q, v in zip(questions, verdicts)
     ]
 
+    primary_skill = passage["primary_skill"]
+    # Only vocabulary/comprehension passages are checkable this way - a
+    # phonics passage's comprehension questions are correctly tagged with a
+    # comprehension skill_id, not the phonics skill_id, so there is nothing
+    # meaningful to compare for those (see module docstring).
+    skill_check_applicable = _SKILL_CATEGORIES.get(primary_skill) in ("vocabulary", "comprehension")
+    tagged_skill_ids = {r["skill_id"] for r in question_results}
+    skill_gap_identified = (primary_skill in tagged_skill_ids) if skill_check_applicable else None
+
     return {
         "passage_id": passage_id,
-        "primary_skill": passage["primary_skill"],
+        "primary_skill": primary_skill,
         "questions": question_results,
         "grounded_count": sum(1 for r in question_results if r["grounded"]),
         "total_count": len(question_results),
+        "skill_check_applicable": skill_check_applicable,
+        "skill_gap_identified": skill_gap_identified,
     }
 
 
-async def run_groundedness_eval_async() -> dict:
-    llm_client = TutorLLMClient()
-    judge = GroundednessJudge()
-    question_gen_latency_ms: list[float] = []
-
-    per_passage = await asyncio.gather(*[
-        _score_one_passage(pid, llm_client, judge, question_gen_latency_ms)
-        for pid in SAMPLE_PASSAGE_IDS
-    ])
-
+def aggregate_per_passage_results(per_passage: list[dict]) -> dict:
+    """Pure aggregation over already-scored per-passage groundedness/skill-
+    tagging results - no API calls, no randomness. Split out from the trial
+    runner specifically so this logic (the actual skill-tagging accuracy
+    math, not the LLM calls that feed it) has real unit test coverage with
+    plain fixture dicts instead of needing a live Claude call to exercise -
+    see tests/test_groundedness_eval.py. Each `per_passage` item's shape
+    matches `_score_one_passage`'s return value.
+    """
     total_questions = sum(p["total_count"] for p in per_passage)
     total_grounded = sum(p["grounded_count"] for p in per_passage)
 
@@ -111,20 +195,102 @@ async def run_groundedness_eval_async() -> dict:
         if not q["grounded"]
     ]
 
+    skill_checkable = [p for p in per_passage if p["skill_check_applicable"]]
+    skill_tagging_matches = sum(1 for p in skill_checkable if p["skill_gap_identified"])
+    skill_tagging_misses = [
+        {"passage_id": p["passage_id"], "expected_skill_id": p["primary_skill"],
+         "tagged_skill_ids": sorted({q["skill_id"] for q in p["questions"]})}
+        for p in skill_checkable
+        if not p["skill_gap_identified"]
+    ]
+
     return {
-        "sample_size": total_questions,
+        "total_questions": total_questions,
+        "grounded_count": total_grounded,
+        "groundedness": round(total_grounded / total_questions, 4) if total_questions else None,
+        "ungrounded_examples": ungrounded_examples,
+        # Does the pipeline correctly identify a vocabulary/comprehension
+        # skill gap? Per-passage: did any generated question get tagged with
+        # that passage's own authored primary_skill? See module docstring.
+        "skill_tagging_accuracy": (
+            round(skill_tagging_matches / len(skill_checkable), 4) if skill_checkable else None
+        ),
+        "skill_tagging_matches": skill_tagging_matches,
+        "skill_tagging_checkable": len(skill_checkable),
+        "skill_tagging_misses": skill_tagging_misses,
+    }
+
+
+async def _run_trial_async() -> dict:
+    """One full, independent trial: real question generation + real
+    LLM-judge calls for every sampled passage. Called `NUM_TRIALS` times by
+    `run_groundedness_eval_async` below - see module docstring's
+    "Multi-trial methodology" section for why a single call of this isn't
+    reported on its own anymore.
+    """
+    llm_client = TutorLLMClient()
+    judge = GroundednessJudge()
+    question_gen_latency_ms: list[float] = []
+
+    per_passage = await asyncio.gather(*[
+        _score_one_passage(pid, llm_client, judge, question_gen_latency_ms)
+        for pid in SAMPLE_PASSAGE_IDS
+    ])
+    agg = aggregate_per_passage_results(per_passage)
+
+    return {
+        "sample_size": agg["total_questions"],
         "passages_sampled": len(SAMPLE_PASSAGE_IDS),
         "questions_per_passage": QUESTIONS_PER_PASSAGE,
-        "groundedness": round(total_grounded / total_questions, 4) if total_questions else None,
-        "grounded_count": total_grounded,
-        "ungrounded_examples": ungrounded_examples,
+        "groundedness": agg["groundedness"],
+        "grounded_count": agg["grounded_count"],
+        "ungrounded_examples": agg["ungrounded_examples"],
+        "skill_tagging_accuracy": agg["skill_tagging_accuracy"],
+        "skill_tagging_matches": agg["skill_tagging_matches"],
+        "skill_tagging_checkable": agg["skill_tagging_checkable"],
+        "skill_tagging_misses": agg["skill_tagging_misses"],
         "per_passage": per_passage,
         "_question_gen_latency_ms": question_gen_latency_ms,  # consumed by run_benchmark for latency stats
     }
 
 
-def run_groundedness_eval() -> dict:
-    return asyncio.run(run_groundedness_eval_async())
+async def run_groundedness_eval_async(num_trials: int = NUM_TRIALS) -> dict:
+    """Runs `num_trials` full, independent trials (real Claude calls every
+    time) and reports mean + observed min/max range for the two numbers
+    known to vary run-to-run (`groundedness`, `skill_tagging_accuracy`),
+    per module docstring. The last trial's `per_passage`/`ungrounded_examples`/
+    `skill_tagging_misses` are kept as one concrete, representative example
+    set for the human-readable report - illustrative, not averaged, since
+    averaging example lists across trials doesn't make sense the way
+    averaging a ratio does.
+    """
+    trials = [await _run_trial_async() for _ in range(num_trials)]
+    last = trials[-1]
+
+    return {
+        "trials_run": num_trials,
+        "sample_size": last["sample_size"],
+        "passages_sampled": last["passages_sampled"],
+        "questions_per_passage": last["questions_per_passage"],
+        "groundedness": mean_range([t["groundedness"] for t in trials]),
+        "grounded_count_last_trial": last["grounded_count"],
+        "ungrounded_examples": last["ungrounded_examples"],
+        "skill_tagging_accuracy": mean_range([t["skill_tagging_accuracy"] for t in trials]),
+        "skill_tagging_matches_last_trial": last["skill_tagging_matches"],
+        "skill_tagging_checkable": last["skill_tagging_checkable"],
+        "skill_tagging_misses": last["skill_tagging_misses"],
+        "per_passage": last["per_passage"],
+        # Pooled across every trial (not just the last) so the latency
+        # percentiles downstream get the benefit of all real calls made,
+        # not just one trial's worth.
+        "_question_gen_latency_ms": [
+            ms for t in trials for ms in t["_question_gen_latency_ms"]
+        ],
+    }
+
+
+def run_groundedness_eval(num_trials: int = NUM_TRIALS) -> dict:
+    return asyncio.run(run_groundedness_eval_async(num_trials))
 
 
 if __name__ == "__main__":

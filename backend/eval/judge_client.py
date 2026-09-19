@@ -4,10 +4,13 @@ Owned by `eval-engineer`. This is a *new* Claude touchpoint - there is no
 existing "is this question grounded" call in `backend/tutor/claude_client.py`
 to import - but it deliberately mirrors that module's established pattern
 exactly (thin `AsyncAnthropic` wrapper, one narrow-purpose method, plain
-system+user prompt, "respond with ONLY JSON" instruction, the same
-strip-code-fence/find-braces JSON parsing helpers) rather than inventing a
-new client shape, per this agent's role brief instruction to reuse the
-pattern already established for the LLM touchpoints this pipeline owns.
+system+user prompt, "respond with ONLY JSON" instruction) rather than
+inventing a new client shape, per this agent's role brief instruction to
+reuse the pattern already established for the LLM touchpoints this pipeline
+owns. The response-unwrap helpers (`_text_of`/`_parse_json_object`) used to
+be copy-pasted here verbatim from `claude_client.py`; both now import them
+from the shared `backend/tutor/llm_parsing.py` module instead (see that
+module's own docstring for why it lives there).
 
 Judge model: STRONG_MODEL (imported from backend/tutor/claude_client, same
 constant tutor-logic-engineer uses for its own grounding-critical calls -
@@ -18,7 +21,6 @@ the same tier, not the fast tier.
 
 from __future__ import annotations
 
-import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +32,8 @@ if str(_TUTOR_DIR) not in sys.path:
     sys.path.insert(0, str(_TUTOR_DIR))
 
 from claude_client import STRONG_MODEL  # noqa: E402  (reuse tutor-logic-engineer's model tier constant)
+from llm_parsing import parse_json_object as _parse_json_object  # noqa: E402
+from llm_parsing import text_of as _text_of  # noqa: E402
 
 JUDGE_SYSTEM_PROMPT = (
     "You are a strict fact-checker for a children's reading-comprehension quiz. "
@@ -82,22 +86,3 @@ class GroundednessJudge:
             grounded=bool(data.get("grounded", False)),
             reasoning=str(data.get("reasoning", "")).strip(),
         )
-
-
-def _text_of(response) -> str:
-    return "".join(block.text for block in response.content if block.type == "text")
-
-
-def _strip_code_fence(text: str) -> str:
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1] if "\n" in text else text
-        if text.endswith("```"):
-            text = text[:-3]
-    return text.strip()
-
-
-def _parse_json_object(text: str) -> dict:
-    text = _strip_code_fence(text)
-    start, end = text.find("{"), text.rfind("}")
-    return json.loads(text[start : end + 1])

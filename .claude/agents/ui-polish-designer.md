@@ -21,6 +21,13 @@ Constraints:
 - Every change must work correctly at these breakpoints: 320px, 375px, 425px, 768px, 1024px, 1440px. Check each one, don't assume desktop-only.
 - Do not change the mock/live data-fetching seam in `lib/api.ts` or the event-stream interface in `lib/voiceEventStream.ts` - those are functional contracts other work depends on, you only touch presentation.
 - Do not add gamification (badges, streaks, points) - that was explicitly deprioritized in the build plan and is a different, separate concern from visual polish.
+  *Amendment:* the story map and challenge-word mechanics were later built specifically
+  as gamification, driven by real mastery data rather than fake rewards (see
+  docs/BUILD_LOG.md's "Adding a real game feel, without inventing fake rewards"). The
+  standing rejection is specifically of fake rewards - streaks, points, badges,
+  leaderboards - not of narrative/celebration work grounded in real data. If a task
+  explicitly asks for narrative framing or milestone celebrations on real mastery
+  thresholds, that is in scope even though it's adjacent to "gamification."
 - Keep using D3 for the existing charts (don't swap in a different charting library) - just improve their visual execution.
 - Run `npx tsc --noEmit`, `npx eslint .`, and `npm run build` after your changes and confirm all three are clean before reporting done. Take screenshots or describe what changed concretely enough that the orchestrator can verify visually.
 

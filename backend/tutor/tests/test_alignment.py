@@ -14,7 +14,9 @@ import pytest
 
 from alignment import (
     MiscueType,
+    _closely_matches,
     _fold_self_corrections,
+    _is_uncorrected_miscue_retry,
     _RawOp,
     align,
     align_events,
@@ -155,6 +157,42 @@ def test_self_correction_does_not_double_count_as_error_in_accuracy():
     assert result.accuracy == 1.0
 
 
+def test_plain_word_repetition_is_not_misclassified_as_self_correction():
+    """Real, confirmed bug repro: a child who simply repeats a word they
+    read correctly the first time ("the the dog ran" for reference "the dog
+    ran") has made no miscue at all - there is nothing to "self-correct".
+    Before the fix, this exact call returned self_correction_count=1
+    because shape b's fold only checked whether the false-start word
+    "closely matches" (which includes an exact match) the next match op's
+    reference word, without requiring the false start to have actually been
+    wrong.
+    """
+    result = align(["the", "dog", "ran"], ["the", "the", "dog", "ran"])
+    assert result.self_correction_count == 0
+    assert result.correct_count == 3
+    assert result.insertion_count == 1
+    assert len(result.miscues) == 1
+    assert result.miscues[0].miscue_type is MiscueType.INSERTION
+    assert result.miscues[0].spoken_word == "the"
+
+
+def test_fold_self_corrections_shape_b_does_not_fold_exact_repeat():
+    """White-box test of the folding helper directly: an insertion that is
+    an EXACT repeat of the very next match's reference word must stay a
+    plain insertion, not get folded into a self_correction - see
+    `_is_uncorrected_miscue_retry`'s docstring in alignment.py.
+    """
+    raw_ops = [
+        _RawOp("insertion", None, None, "the"),
+        _RawOp("match", 0, "the", "the"),
+        _RawOp("match", 1, "dog", "dog"),
+        _RawOp("match", 2, "ran", "ran"),
+    ]
+    folded = _fold_self_corrections(raw_ops)
+    kinds = [op.kind for op in folded]
+    assert kinds == ["insertion", "match", "match", "match"]
+
+
 def test_fold_self_corrections_shape_a_substitution_then_matching_insertion():
     """White-box test of the folding helper directly for the other shape a
     substitution op can arrive in (substitution immediately followed by an
@@ -176,6 +214,49 @@ def test_fold_self_corrections_shape_a_substitution_then_matching_insertion():
     assert self_corr.ref_index == 1
     assert self_corr.ref_word == "friend"
     assert self_corr.spoken_word == "fren"  # false-start attempt preserved
+
+
+# --------------------------------------------------------------------------- closely-matches length gate
+
+
+def test_closely_matches_rejects_unrelated_short_words_one_edit_apart():
+    """Real, confirmed bug repro: CVC short-vowel words (cat/bat/hat/mat/
+    sat/rat/fat/pat - per content/skill_taxonomy.json, the single most
+    common grade-1 phonics word family) are ALL pairwise Levenshtein
+    distance 1 from each other, so an unqualified `distance <= 1` check
+    treats any two of them as "the same word, slightly misheard" even
+    though they're unrelated words. "hat" and "cat" must NOT closely-match.
+    """
+    assert _closely_matches("hat", "cat") is False
+    assert _is_uncorrected_miscue_retry("hat", "cat") is False
+
+
+def test_closely_matches_accepts_genuine_near_miss_on_a_longer_word():
+    """True-positive that must keep working after the length gate: a
+    plausible STT mishearing/mistranscription of a longer word (one
+    inserted/dropped/swapped letter) is still exactly the case this
+    function exists to catch.
+    """
+    assert _closely_matches("elephant", "elephants") is True
+    assert _is_uncorrected_miscue_retry("elephant", "elephants") is True
+
+
+def test_align_does_not_fold_a_stray_unrelated_short_word_into_self_correction():
+    """End-to-end repro of the real bug (not just the unit-level helper): a
+    stray, unrelated word ("hat") inserted right before the correct next
+    reference word ("cat") must NOT be folded into a false self_correction
+    of "cat" just because "hat" and "cat" are one edit apart. This is a
+    genuine insertion with no self-correction anywhere in the read.
+    """
+    ref = ["the", "cat", "sat", "on", "a", "mat"]
+    spoken = ["the", "hat", "cat", "sat", "on", "a", "mat"]
+    result = align(ref, spoken)
+    assert result.self_correction_count == 0
+    assert result.insertion_count == 1
+    assert result.correct_count == len(ref)
+    assert len(result.miscues) == 1
+    assert result.miscues[0].miscue_type is MiscueType.INSERTION
+    assert result.miscues[0].spoken_word == "hat"
 
 
 # --------------------------------------------------------------------------- WCPM / accuracy

@@ -40,6 +40,7 @@ ALPHA = 0.3
 PREREQ_ALPHA = 0.5 * ALPHA  # 0.15
 
 _taxonomy_ids_cache: list[str] | None = None
+_phonics_ids_cache: frozenset[str] | None = None
 
 
 def _taxonomy_skill_ids() -> list[str]:
@@ -51,6 +52,21 @@ def _taxonomy_skill_ids() -> list[str]:
         taxonomy = json.loads(db.TAXONOMY_PATH.read_text())
         _taxonomy_ids_cache = [skill["id"] for skill in taxonomy]
     return _taxonomy_ids_cache
+
+
+def _phonics_skill_ids() -> frozenset[str]:
+    """The subset of taxonomy skill ids whose `category` is "phonics" - see
+    compute_direct_skill_scores's clean-read bonus for why this matters:
+    only phonics/decoding skills have a genuine "silent success" case
+    (a passage read with zero miscues on that skill). Cached like
+    _taxonomy_skill_ids, same reasoning."""
+    global _phonics_ids_cache
+    if _phonics_ids_cache is None:
+        taxonomy = json.loads(db.TAXONOMY_PATH.read_text())
+        _phonics_ids_cache = frozenset(
+            s["id"] for s in taxonomy if s.get("category") == "phonics"
+        )
+    return _phonics_ids_cache
 
 MISCUE_ERROR_TYPES = {"substitution", "omission", "insertion"}
 MISCUE_PENALTY = 0.15
@@ -110,13 +126,29 @@ def compute_direct_skill_scores(
         score = 1.0 - counts["errors"] * MISCUE_PENALTY + counts["self_corrections"] * SELF_CORRECTION_BONUS
         scores[skill_id] = max(0.0, min(1.0, score))
 
-    # A passage-tagged skill that never shows up in miscue_skills at all was read
-    # with zero mistakes on it - real positive evidence, previously dropped
-    # entirely (see docstring above). Only fills in skills with no miscue entry of
-    # any kind; a skill already scored above (even from a self-correction alone)
-    # keeps its real, evidence-based score instead of being overwritten by this.
+    # A passage-tagged PHONICS skill that never shows up in miscue_skills at all
+    # was read with zero mistakes on it - real positive evidence, previously
+    # dropped entirely (see docstring above). Only fills in skills with no miscue
+    # entry of any kind; a skill already scored above (even from a self-correction
+    # alone) keeps its real, evidence-based score instead of being overwritten by
+    # this.
+    #
+    # Real bug found live (see docs/BUILD_LOG.md): this used to loop over ALL of
+    # passage_skill_ids with no category filter, so a passage's vocabulary/
+    # comprehension skill_ids (Passage.skills routinely mixes categories, per
+    # contracts/passage_schema.json) got the same "assume 1.0" treatment as
+    # phonics ones - directly contradicting this function's own docstring, which
+    # already said comprehension skills aren't included in this treatment.
+    # Concretely, a session with a WRONG comprehension answer on a passage-tagged
+    # skill got that wrong answer's real 0.0 averaged against a phantom 1.0 below
+    # (inflating it to 0.5), and a passage-tagged skill nobody was even asked
+    # about this session got a full, unearned 1.0 "direct" update. Fixed by
+    # restricting this fill to _phonics_skill_ids() - comprehension/vocabulary
+    # skills only ever get a score from an actual answered question, in the loop
+    # below, exactly as the docstring always claimed.
+    phonics_ids = _phonics_skill_ids()
     for skill_id in passage_skill_ids or ():
-        if skill_id not in miscue_skills:
+        if skill_id in phonics_ids and skill_id not in miscue_skills:
             scores[skill_id] = 1.0
 
     # --- comprehension skills, from comprehension answers ---
@@ -197,22 +229,35 @@ def _blend_weight_atomic(cur, student_id: str, skill_id: str, alpha: float, scor
     wrote, and the second write would silently clobber the first - a
     genuine lost update, not hypothetical.
 
-    `weight` on the right of `do update set weight = ...` below is standard
-    UPSERT syntax on both Postgres and SQLite for "this row's value as it
-    stands the instant this statement's own conflict resolution runs" - not
-    a value read earlier in Python, so there is no window for another
-    transaction to change it out from under this one. No explicit clamping
-    is needed: `score` is already clamped to [0, 1] by every caller before
-    it gets here, `alpha` is a fixed in-range constant, and a convex
-    combination ((1-alpha)*x + alpha*y) of two already-in-[0,1] values can
-    never itself leave [0, 1].
+    `weight` on the right of `do update set weight = ...` refers to "this
+    row's value as it stands the instant this statement's own conflict
+    resolution runs" - not a value read earlier in Python, so there is no
+    window for another transaction to change it out from under this one.
+    No explicit clamping is needed: `score` is already clamped to [0, 1] by
+    every caller before it gets here, `alpha` is a fixed in-range constant,
+    and a convex combination ((1-alpha)*x + alpha*y) of two already-in-[0,1]
+    values can never itself leave [0, 1].
+
+    Real bug found live (see docs/BUILD_LOG.md): an unqualified `weight` on
+    the right-hand side used to raise `psycopg2.errors.AmbiguousColumn` on
+    real Postgres - ON CONFLICT DO UPDATE puts both the target table's own
+    row AND the special `excluded` pseudo-row in scope, and `excluded` also
+    has a `weight` column (it mirrors every column of the table), so a bare
+    `weight` is genuinely ambiguous between "the existing row" and
+    "excluded.weight," not resolvable by a default. SQLite has no such
+    ambiguity (its `excluded.` rows aren't a second same-named relation in
+    scope the same way), which is exactly why this went unnoticed until a
+    real session hit the real production Postgres database - every session
+    ingested before this fix silently failed the whole request with a 500,
+    including the mastery update the entire pipeline depends on. Qualifying
+    the existing-row reference with the table's own name resolves it.
     """
     cur.execute(
         """
         insert into student_skill_mastery (student_id, skill_id, weight, updated_at)
         values (?, ?, ?, ?)
         on conflict(student_id, skill_id) do update set
-            weight = (1 - ?) * weight + ? * ?,
+            weight = (1 - ?) * student_skill_mastery.weight + ? * ?,
             updated_at = excluded.updated_at
         returning weight
         """,
@@ -252,12 +297,47 @@ def apply_session_to_mastery(
         new = _blend_weight_atomic(cur, student_id, skill_id, ALPHA, score)
         updates.append(SkillUpdate(skill_id, score, old, new, direct=True))
 
-    # Propagated partial credit to skills each directly-updated skill unlocks.
+    # Real, confirmed bug (live-reproduced): the taxonomy is a DAG, not a tree, so
+    # the SAME downstream skill_id can appear in more than one directly-practiced
+    # skill's own prerequisite_of list in one request (e.g. both vowel_teams and
+    # diphthongs list multisyllabic_decoding downstream). The old code below
+    # looped over every direct skill and unconditionally called
+    # _blend_weight_atomic again for each of its downstream skills, so a shared
+    # downstream skill got one separate, sequential blend per contributing direct
+    # skill, each one reading the row the previous write just left behind -
+    # confirmed live as multisyllabic_decoding compounding 0.582 -> 0.645 -> 0.698
+    # in a single request that touched both vowel_teams and diphthongs, instead of
+    # moving once.
+    #
+    # Fix: first collect, per downstream skill_id, the score of every direct
+    # skill that feeds it - without writing anything yet - then blend each
+    # unique downstream skill_id exactly once. When more than one direct skill
+    # feeds the same downstream skill, the combined score is their AVERAGE: the
+    # same choice this file already makes a few lines up in
+    # compute_direct_skill_scores when one skill_id shows up in both miscues and
+    # comprehension ("average the two signals rather than clobbering one") - an
+    # average is the principled pick here too, since each contributing direct
+    # skill is equally real evidence of "quiet progress on what this unlocks,"
+    # and picking a max or an arbitrary first-seen score would let one skill's
+    # score silently overrule another's instead of blending both.
+    #
+    # A downstream skill that was ALSO practiced directly this session is
+    # excluded from this pass entirely: it already has a real, observed direct
+    # score from the loop above, which is strictly better evidence than an
+    # inferred prerequisite nudge, so direct evidence wins outright rather than
+    # being averaged with or overwritten by a propagated one.
+    downstream_scores: dict[str, list[float]] = {}
     for skill_id, score in direct_scores.items():
         for downstream_id in edges.get(skill_id, []):
-            old = get_weight(cur, student_id, downstream_id)
-            new = _blend_weight_atomic(cur, student_id, downstream_id, PREREQ_ALPHA, score)
-            updates.append(SkillUpdate(downstream_id, score, old, new, direct=False))
+            if downstream_id in direct_scores:
+                continue
+            downstream_scores.setdefault(downstream_id, []).append(score)
+
+    for downstream_id, scores in downstream_scores.items():
+        combined_score = sum(scores) / len(scores)
+        old = get_weight(cur, student_id, downstream_id)
+        new = _blend_weight_atomic(cur, student_id, downstream_id, PREREQ_ALPHA, combined_score)
+        updates.append(SkillUpdate(downstream_id, combined_score, old, new, direct=False))
 
     return updates
 

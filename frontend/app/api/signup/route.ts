@@ -3,6 +3,19 @@ import bcrypt from "bcryptjs";
 import { pool } from "@/lib/db";
 import { createStudent } from "@/lib/api";
 
+// Postgres unique_violation error code (db/schema.sql's `email text not null
+// unique` on app_users) - node-postgres attaches this as a plain `.code`
+// string property on the thrown error, not a subclass we could `instanceof`
+// check.
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code?: unknown }).code === "23505"
+  );
+}
+
 export async function POST(request: Request) {
   const body = await request.json();
   const { email, password, displayName, grade } = body ?? {};
@@ -41,11 +54,30 @@ export async function POST(request: Request) {
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
-  await pool.query(
-    `insert into app_users (email, password_hash, student_id, display_name, grade)
-     values ($1, $2, $3, $4, $5)`,
-    [normalizedEmail, passwordHash, studentResult.data.id, displayName, grade]
-  );
+  try {
+    await pool.query(
+      `insert into app_users (email, password_hash, student_id, display_name, grade)
+       values ($1, $2, $3, $4, $5)`,
+      [normalizedEmail, passwordHash, studentResult.data.id, displayName, grade]
+    );
+  } catch (err) {
+    // Real TOCTOU found by audit: two concurrent signups with the same
+    // email can both pass the uniqueness check above before either has
+    // inserted - only one of the two concurrent inserts can actually win
+    // app_users' own unique constraint on email, and the loser would
+    // otherwise throw this unhandled, turning into a raw 500. Treat it the
+    // same clean way the common (non-racy) duplicate-email case above
+    // already is. This does leave the loser's `students` row (created just
+    // above) orphaned - a known, narrow gap, not silently swept under an
+    // unrelated success response.
+    if (isUniqueViolation(err)) {
+      return NextResponse.json(
+        { error: "An account with that email already exists" },
+        { status: 409 }
+      );
+    }
+    throw err;
+  }
 
   return NextResponse.json({ ok: true });
 }

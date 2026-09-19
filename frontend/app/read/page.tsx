@@ -2,12 +2,13 @@
 
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { getNextPassage, getPassageById } from "@/lib/api";
 import type { DataSource, Passage } from "@/lib/types";
 import ReadingScreen from "@/components/reading/ReadingScreen";
 import DataSourceBadge from "@/components/DataSourceBadge";
+import Logo from "@/components/ui/Logo";
 
 export default function ReadPage() {
   return (
@@ -21,13 +22,29 @@ function ReadPageInner() {
   // A real person's explicit story choice (the story map's tap-a-node flow,
   // docs/FEATURE_IDEAS.md's gameplay ideation) arrives as ?passage_id=... -
   // absent, this page auto-selects exactly as before.
-  const chosenPassageId = useSearchParams().get("passage_id") ?? undefined;
+  const searchParams = useSearchParams();
+  const chosenPassageId = searchParams.get("passage_id") ?? undefined;
   const router = useRouter();
+  const pathname = usePathname();
   const { data: session, status } = useSession();
   const studentId = session?.user?.studentId;
   const [passage, setPassage] = useState<Passage | null>(null);
   const [source, setSource] = useState<DataSource | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Real gap found by audit: this page (and /dashboard, /map) only ever
+  // gated its own data fetch on `status === "authenticated"` - an
+  // unauthenticated visitor never got sent anywhere, they just watched an
+  // empty-state shell forever. Redirect for real, preserving any
+  // ?passage_id= so the login page (app/login/page.tsx, which already reads
+  // callbackUrl) can send them right back to the exact story they chose.
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      const query = searchParams.toString();
+      const callbackUrl = query ? `${pathname}?${query}` : pathname;
+      router.replace(`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`);
+    }
+  }, [status, router, pathname, searchParams]);
 
   useEffect(() => {
     if (status !== "authenticated" || !studentId) return;
@@ -75,21 +92,26 @@ function ReadPageInner() {
     // not a colorful band up top fading into a pale or plain body. See
     // docs/BUILD_LOG.md for why this replaced the earlier pale-tint version.
     <main className="min-h-screen bg-gradient-to-b from-sky-400 via-sky-300 to-amber-300 px-4 py-8 sm:py-10">
-      <div className="mx-auto mb-6 flex max-w-3xl items-center justify-between">
-        <Link
-          href="/"
-          className="text-sm font-medium text-white/80 transition hover:text-white"
-        >
-          &larr; Home
-        </Link>
-        <div className="flex items-center gap-4">
-          <DataSourceBadge source={source} />
-          <button
-            onClick={() => signOut({ callbackUrl: "/login" })}
+      <div className="mx-auto mb-6 max-w-3xl">
+        <div className="flex items-center justify-between">
+          <Link
+            href="/"
             className="text-sm font-medium text-white/80 transition hover:text-white"
           >
-            Sign out
-          </button>
+            &larr; Home
+          </Link>
+          <div className="flex items-center gap-4">
+            <DataSourceBadge source={source} />
+            <button
+              onClick={() => signOut({ callbackUrl: "/login" })}
+              className="text-sm font-medium text-white/80 transition hover:text-white"
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
+        <div className="mt-3 flex justify-center">
+          <Logo size="sm" tone="light" href={null} />
         </div>
       </div>
 

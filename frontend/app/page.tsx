@@ -4,14 +4,27 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
+import { motion } from "framer-motion";
 import { celebrate, playPop } from "@/lib/confettiPop";
 import { getSessions } from "@/lib/api";
 import PenguinMascot from "@/components/reading/PenguinMascot";
+import Logo from "@/components/ui/Logo";
+
+// next/link isn't a plain DOM element, so it needs motion.create() to
+// become animatable - this keeps its own real client-side navigation
+// behavior completely intact, framer-motion only ever touches the visual
+// transform/shadow on top of it.
+const MotionLink = motion.create(Link);
 
 interface HomeStats {
   storiesRead: number;
-  latestWcpm: number | null;
-  latestAccuracy: number | null;
+  avgWcpm: number | null;
+  avgAccuracy: number | null;
+}
+
+function average(values: number[]): number | null {
+  if (values.length === 0) return null;
+  return values.reduce((sum, v) => sum + v, 0) / values.length;
 }
 
 export default function Home() {
@@ -27,8 +40,8 @@ export default function Home() {
       const sessions = r.data;
       setStats({
         storiesRead: sessions.length,
-        latestWcpm: sessions[0]?.wcpm ?? null,
-        latestAccuracy: sessions[0]?.accuracy ?? null,
+        avgWcpm: average(sessions.map((s) => s.wcpm)),
+        avgAccuracy: average(sessions.map((s) => s.accuracy)),
       });
     });
     return () => {
@@ -89,14 +102,17 @@ export default function Home() {
         </span>
       </div>
 
-      <button
-        onClick={() => signOut({ callbackUrl: "/login" })}
-        className="absolute right-4 top-4 z-10 text-sm font-medium text-white/80 transition hover:text-white"
-      >
-        Sign out
-      </button>
+      <div className="relative flex items-center justify-between px-4 pt-4 sm:px-6">
+        <Logo size="sm" tone="light" href={null} />
+        <button
+          onClick={() => signOut({ callbackUrl: "/login" })}
+          className="text-sm font-medium text-white/80 transition hover:text-white"
+        >
+          Sign out
+        </button>
+      </div>
 
-      <div className="relative px-4 pb-6 pt-12 sm:pt-16">
+      <div className="relative px-4 pb-6 pt-8 sm:pt-10">
         <div className="mx-auto max-w-3xl text-center">
           {/* The owl that used to greet a family here is now this same
               penguin every other screen already has - one consistent
@@ -212,13 +228,13 @@ function StatStrip({ stats }: { stats: HomeStats | null }) {
       <StatPill icon="📚" value={String(stats.storiesRead)} label="Stories read" />
       <StatPill
         icon="⏱️"
-        value={stats.latestWcpm != null ? String(stats.latestWcpm) : "—"}
-        label="Latest wcpm"
+        value={stats.avgWcpm != null ? String(Math.round(stats.avgWcpm)) : "—"}
+        label="Avg wcpm"
       />
       <StatPill
         icon="🎯"
-        value={stats.latestAccuracy != null ? `${Math.round(stats.latestAccuracy * 100)}%` : "—"}
-        label="Latest accuracy"
+        value={stats.avgAccuracy != null ? `${Math.round(stats.avgAccuracy * 100)}%` : "—"}
+        label="Avg accuracy"
       />
     </div>
   );
@@ -271,9 +287,9 @@ function NavCard({
   description: string;
 }) {
   return (
-    <Link
+    <MotionLink
       href={href}
-      onClick={(e) => {
+      onClick={(e: React.MouseEvent<HTMLAnchorElement>) => {
         // Real navigation happens for real via next/link below - this is
         // the same delight layer real buttons get elsewhere (lib/
         // confettiPop.ts, components/ui/PlumpButton.tsx), never a
@@ -282,7 +298,10 @@ function NavCard({
         celebrate(rect.left + rect.width / 2, rect.top + rect.height / 2, 20);
         playPop("small");
       }}
-      className={`group flex flex-col gap-2.5 rounded-3xl p-5 shadow-lg ring-2 transition hover:-translate-y-1 hover:shadow-xl active:scale-95 ${CARD_BG_CLASSES[color]}`}
+      whileHover={{ y: -6, scale: 1.02 }}
+      whileTap={{ scale: 0.96 }}
+      transition={{ type: "spring", stiffness: 350, damping: 20 }}
+      className={`group flex flex-col gap-2.5 rounded-3xl p-5 shadow-lg ring-2 transition-shadow hover:shadow-xl ${CARD_BG_CLASSES[color]}`}
     >
       <span
         className={`card-wiggle-icon inline-flex h-11 w-11 items-center justify-center rounded-2xl text-2xl ${CARD_ICON_CLASSES[color]}`}
@@ -294,6 +313,6 @@ function NavCard({
         {title}
       </span>
       <span className="text-sm text-slate-500">{description}</span>
-    </Link>
+    </MotionLink>
   );
 }

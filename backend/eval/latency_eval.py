@@ -28,6 +28,27 @@ actually invoked here - forwarded anyway so this class keeps satisfying the
 real interface it claims to, rather than silently falling one method short
 of it (a real bug found and fixed in backend/voice/latency_observer.py's
 identically-shaped wrapper, which WAS hit - see docs/BUILD_LOG.md).
+
+Multi-trial methodology (fix for a real audit finding)
+---------------------------------------------------------------------------
+A fresh audit re-ran this exact module against identical code multiple times
+in one session and saw hint-generation P95 swing from 11.6s to 19.7s - real
+Claude API latency variance, not a harness bug (a fast-tier hint call is
+short enough that one or two slow real network round trips can swing a
+10-sample P95 substantially). Reporting P95 (or P50) from a single 10-session
+run as if it were a precise, reproducible number was therefore misleading.
+This module now runs `NUM_TRIALS` full, independent trials (each trial
+re-runs all `LATENCY_PASSAGE_IDS` sessions with real Claude calls) and
+returns each trial's raw per-call samples separately so `run_benchmark.py`
+can compute a percentile per trial and report the mean plus observed
+min/max range across trials, via `report.mean_range` - the same treatment
+`groundedness_eval.py` gives its own noisy numbers. `NUM_TRIALS = 2` (not 3,
+per this agent's own role brief "2-3 repeated trials is enough, be mindful
+this makes real, billed API calls, so don't go overboard") - this module's
+per-trial cost is already the most expensive in the harness (10 full
+sessions, each several sequential LLM round trips), so 2 trials (20 sessions
+total, up from 10) is the deliberately smaller of the two multiplier choices
+used in this fix.
 """
 
 from __future__ import annotations
@@ -64,6 +85,10 @@ LATENCY_PASSAGE_IDS = [
 
 QUESTIONS_PER_SESSION = 2
 _DECOY = "zorp"
+
+# See module docstring's "Multi-trial methodology" section for why this
+# exists and why 2 (not 3, unlike groundedness_eval.py's NUM_TRIALS).
+NUM_TRIALS = 2
 
 
 def _load_passage(passage_id: str) -> dict:
@@ -166,7 +191,13 @@ async def _run_one_session(passage_id: str, sink: dict[str, list[float]]) -> dic
     }
 
 
-async def run_latency_eval_async() -> dict:
+async def _run_trial_async() -> dict:
+    """One full, independent trial: all `LATENCY_PASSAGE_IDS` sessions, real
+    Claude calls throughout. Called `NUM_TRIALS` times by
+    `run_latency_eval_async` below - see module docstring's "Multi-trial
+    methodology" section for why a single call of this isn't reported on
+    its own anymore.
+    """
     sink: dict[str, list[float]] = {
         "hint_ms": [],
         "question_generation_ms": [],
@@ -184,8 +215,35 @@ async def run_latency_eval_async() -> dict:
     }
 
 
-def run_latency_eval() -> dict:
-    return asyncio.run(run_latency_eval_async())
+async def run_latency_eval_async(num_trials: int = NUM_TRIALS) -> dict:
+    """Runs `num_trials` full, independent trials and returns both the
+    pooled raw samples (every trial's samples concatenated - a larger,
+    single sample for callers that just want "all the real numbers we
+    have") and the per-trial raw samples separately (`raw_samples_ms_by_trial`)
+    so `run_benchmark.py` can compute a percentile per trial and report the
+    mean plus observed range across trials for the noisy P50/P95 figures,
+    per module docstring.
+    """
+    trials = [await _run_trial_async() for _ in range(num_trials)]
+
+    keys = ("hint_ms", "question_generation_ms", "grading_ms", "completeness_ms")
+    pooled_raw = {key: [ms for t in trials for ms in t["raw_samples_ms"][key]] for key in keys}
+
+    return {
+        "trials_run": num_trials,
+        "sessions_run": sum(t["sessions_run"] for t in trials),
+        "raw_samples_ms": pooled_raw,
+        "raw_samples_ms_by_trial": [t["raw_samples_ms"] for t in trials],
+        "per_session": [
+            {**s, "trial": trial_index}
+            for trial_index, t in enumerate(trials)
+            for s in t["per_session"]
+        ],
+    }
+
+
+def run_latency_eval(num_trials: int = NUM_TRIALS) -> dict:
+    return asyncio.run(run_latency_eval_async(num_trials))
 
 
 if __name__ == "__main__":

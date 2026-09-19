@@ -3,7 +3,8 @@
     "id": "short_vowels",
     "label": "Short Vowel Sounds",
     "category": "phonics",
-    "prerequisite_of": ["consonant_blends", "consonant_digraphs", "closed_syllables", "silent_e"]
+    "_note": "literal_comprehension listed here (not only reachable via the multisyllabic_decoding -> vocabulary_in_context chain) because a grade-1 reader who can decode short-vowel words can already literally comprehend a grade-1 passage; see the longer note on vocabulary_in_context below for why that chain was the wrong single gate for it.",
+    "prerequisite_of": ["consonant_blends", "consonant_digraphs", "closed_syllables", "silent_e", "literal_comprehension"]
   },
   {
     "id": "consonant_blends",
@@ -57,7 +58,7 @@
     "id": "inflectional_endings",
     "label": "Inflectional Endings (-s, -ed, -ing)",
     "category": "phonics",
-    "prerequisite_of": ["multisyllabic_decoding"]
+    "prerequisite_of": ["multisyllabic_decoding", "prefixes_and_suffixes_meaning"]
   },
   {
     "id": "compound_words",
@@ -72,16 +73,54 @@
     "prerequisite_of": ["vocabulary_in_context"]
   },
   {
+    "id": "word_categories",
+    "label": "Word Categories and Relationships",
+    "category": "vocabulary",
+    "prerequisite_of": ["synonyms_and_antonyms"]
+  },
+  {
+    "id": "synonyms_and_antonyms",
+    "label": "Synonyms and Antonyms",
+    "category": "vocabulary",
+    "prerequisite_of": ["multiple_meaning_words"]
+  },
+  {
+    "id": "multiple_meaning_words",
+    "label": "Multiple-Meaning Words",
+    "category": "vocabulary",
+    "prerequisite_of": ["vocabulary_in_context"]
+  },
+  {
+    "id": "prefixes_and_suffixes_meaning",
+    "label": "Prefixes and Suffixes for Meaning",
+    "category": "vocabulary",
+    "prerequisite_of": ["vocabulary_in_context"]
+  },
+  {
     "id": "vocabulary_in_context",
     "label": "Vocabulary in Context",
     "category": "vocabulary",
-    "prerequisite_of": ["literal_comprehension"]
+    "_note": "literal_comprehension was removed from this list (2026-09). It previously sat only behind vocabulary_in_context, which itself sits behind multisyllabic_decoding and, transitively, almost every phonics skill (r_controlled_vowels, vowel_teams, diphthongs, etc). That made mastery-engineer's readiness check require a student to have essentially finished the phonics curriculum before literal_comprehension could ever be selected as a next skill - but grade-1 passages (g1-predicting-001, g1-cause-effect-001, g1-compare-contrast-001, g1-literal-comp-001/002, and others) tag literal_comprehension as a co-skill on day-one, grade-1 material that only needs short_vowels to decode. Reading-science models (e.g. Scarborough's Rope) treat word recognition and language comprehension as parallel strands, not a strict single-file gate, and a beginning reader can literally comprehend simple decodable text without any multisyllabic decoding at all. So literal_comprehension now also hangs directly off short_vowels (see that node), which matches what the grade-1 content actually assumes; vocabulary_in_context - a genuinely harder skill (inferring word meaning from context while reading, which benefits from fluent decoding of longer words) - keeps gating figurative_language.",
+    "prerequisite_of": ["figurative_language"]
+  },
+  {
+    "id": "figurative_language",
+    "label": "Figurative Language (Similes and Idioms)",
+    "category": "vocabulary",
+    "prerequisite_of": ["inferential_comprehension"]
   },
   {
     "id": "literal_comprehension",
     "label": "Literal Comprehension",
     "category": "comprehension",
-    "prerequisite_of": ["sequencing", "cause_and_effect", "inferential_comprehension"]
+    "prerequisite_of": [
+      "sequencing",
+      "cause_and_effect",
+      "inferential_comprehension",
+      "character_traits_and_analysis",
+      "compare_and_contrast",
+      "predicting_outcomes"
+    ]
   },
   {
     "id": "sequencing",
@@ -96,14 +135,42 @@
     "prerequisite_of": ["inferential_comprehension", "main_idea_and_summarizing"]
   },
   {
+    "id": "character_traits_and_analysis",
+    "label": "Character Traits and Analysis",
+    "category": "comprehension",
+    "_note": "inferential_comprehension removed from this list (2026-09, same pass that loosened main_idea_and_summarizing below) - see the longer note on inferential_comprehension for why requiring it alongside cause_and_effect, predicting_outcomes, AND figurative_language made that skill unreachable in practice.",
+    "prerequisite_of": []
+  },
+  {
+    "id": "compare_and_contrast",
+    "label": "Compare and Contrast",
+    "category": "comprehension",
+    "_note": "main_idea_and_summarizing removed from this list (2026-09) - see the longer note on main_idea_and_summarizing for why requiring it alongside sequencing, cause_and_effect, AND inferential_comprehension made that skill unreachable in practice.",
+    "prerequisite_of": []
+  },
+  {
+    "id": "predicting_outcomes",
+    "label": "Making Predictions from Passage Clues",
+    "category": "comprehension",
+    "prerequisite_of": ["inferential_comprehension"]
+  },
+  {
     "id": "inferential_comprehension",
     "label": "Inferential Comprehension",
     "category": "comprehension",
-    "prerequisite_of": ["main_idea_and_summarizing"]
+    "_note": "Until 2026-09 this skill sat behind an AND-gate of FOUR siblings (cause_and_effect, character_traits_and_analysis, predicting_outcomes, figurative_language all had to be mastered first) on top of the literal_comprehension base every comprehension skill already needs. Same structural flaw already fixed once this session for literal_comprehension's own gate (see short_vowels/vocabulary_in_context notes): a strict all-of-N-prerequisites reading treats mastery-engineer's readiness check as a single-file gate instead of the parallel-strands model reading science actually uses (Scarborough's Rope again - inference draws on several comprehension sub-skills developing side by side, not a checklist that must fully complete in order). It's also not what the content assumes: g3-inferential-001 tags inferential_comprehension with only literal_comprehension as a co-skill, and g3-inferential-002 tags it with only cause_and_effect - no passage in the library co-tags it with character_traits_and_analysis or figurative_language at all. Loosened to require literal_comprehension (the universal base) plus cause_and_effect and predicting_outcomes - the two siblings that are themselves most directly about reasoning from clues/relationships in the text, which is what inference is. character_traits_and_analysis and figurative_language no longer gate it (their own prerequisite_of entries were updated to match) but remain real, separately-selectable skills.",
+    "prerequisite_of": []
   },
   {
     "id": "main_idea_and_summarizing",
     "label": "Main Idea and Summarizing",
+    "category": "comprehension",
+    "_note": "Until 2026-09 this skill required ALL FOUR of sequencing, cause_and_effect, compare_and_contrast, AND inferential_comprehension - the same AND-gate structural flaw as inferential_comprehension above (and the literal_comprehension gate fixed earlier this session), making it effectively require finishing almost the entire comprehension strand first. No passage in the library backs that assumption either: g1-main-idea-001 pairs main_idea_and_summarizing with only literal_comprehension, g3-main-idea-001 pairs it with only vocabulary_in_context, and g2-authors-purpose-001 (which tags it as a co-skill) pairs it with only sequencing - never with compare_and_contrast or inferential_comprehension. Loosened to require literal_comprehension (the universal base) plus sequencing and cause_and_effect - the two siblings most directly tied to following a narrative's structure (what happened, in order, and why), which is what identifying a main idea builds on. compare_and_contrast and inferential_comprehension no longer gate it (their own prerequisite_of entries were updated to match) but remain real, separately-selectable skills.",
+    "prerequisite_of": ["authors_purpose"]
+  },
+  {
+    "id": "authors_purpose",
+    "label": "Author's Purpose",
     "category": "comprehension",
     "prerequisite_of": []
   }

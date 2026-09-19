@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Settings, Target, Ruler, FlaskConical, type LucideIcon } from "lucide-react";
 import { getEngineeringDashboard } from "@/lib/api";
 import type { DataSource, EngineeringDashboard } from "@/lib/types";
 import DataSourceBadge from "@/components/DataSourceBadge";
 import LatencyChart from "@/components/admin/LatencyChart";
 import PenguinMascot from "@/components/reading/PenguinMascot";
+import Logo from "@/components/ui/Logo";
 
 export default function EngineeringDashboardPage() {
   const [dashboard, setDashboard] = useState<EngineeringDashboard | null>(null);
@@ -33,21 +35,26 @@ export default function EngineeringDashboardPage() {
     // calm, near-neutral canvas instead of the whole background.
     <main className="min-h-screen bg-gradient-to-b from-indigo-50 via-white to-indigo-50 px-4 py-10">
       <div className="mx-auto max-w-3xl">
-        <div className="mb-6 flex items-center justify-between">
-          <Link href="/" className="text-sm text-slate-500 hover:text-slate-700">
-            &larr; Home
-          </Link>
-          <DataSourceBadge source={source} />
+        <div className="mb-6">
+          <div className="flex items-center justify-between">
+            <Link href="/" className="text-sm text-slate-500 hover:text-slate-700">
+              &larr; Home
+            </Link>
+            <DataSourceBadge source={source} />
+          </div>
+          <div className="mt-3 flex justify-center">
+            <Logo size="sm" tone="dark" href={null} />
+          </div>
         </div>
 
         <div className="mb-6 flex items-center gap-3">
           <span
             aria-hidden
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-xl text-indigo-600 shadow-md ring-1 ring-indigo-100"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-indigo-600 shadow-md ring-1 ring-indigo-100"
           >
-            ⚙️
+            <Settings className="h-5 w-5" strokeWidth={2.25} />
           </span>
-          <h1 className="font-[family-name:var(--font-kid)] text-2xl font-bold text-slate-800">
+          <h1 className="font-[family-name:var(--font-classy)] text-2xl font-bold text-slate-800">
             Pipeline Engineering Dashboard
           </h1>
           {/* Still the quietest version of this on any page - this is a
@@ -93,17 +100,17 @@ export default function EngineeringDashboardPage() {
               <h2 className="mb-4 font-[family-name:var(--font-kid)] text-lg font-bold text-slate-800">Eval scores</h2>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <EvalTile
-                  icon="🎯"
+                  icon={Target}
                   label="Diagnostic accuracy"
                   value={`${Math.round(dashboard.eval.diagnostic_accuracy * 100)}%`}
                 />
                 <EvalTile
-                  icon="📐"
+                  icon={Ruler}
                   label="Question groundedness"
                   value={`${Math.round(dashboard.eval.question_groundedness * 100)}%`}
                 />
                 <EvalTile
-                  icon="🧪"
+                  icon={FlaskConical}
                   label="Sample size"
                   value={String(dashboard.eval.sample_size)}
                 />
@@ -116,11 +123,11 @@ export default function EngineeringDashboardPage() {
   );
 }
 
-function EvalTile({ icon, label, value }: { icon: string; label: string; value: string }) {
+function EvalTile({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
   return (
     <div className="flex flex-col items-center gap-1.5 rounded-2xl bg-indigo-50/70 p-4 text-center ring-1 ring-indigo-200/70 transition hover:-translate-y-0.5 hover:shadow-sm">
-      <span aria-hidden className="text-lg">
-        {icon}
+      <span aria-hidden className="text-indigo-500">
+        <Icon className="h-5 w-5" strokeWidth={2.25} />
       </span>
       <div className="font-[family-name:var(--font-kid)] text-2xl font-bold text-slate-800">{value}</div>
       <div className="text-xs text-slate-500">{label}</div>

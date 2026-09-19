@@ -29,6 +29,7 @@
 import { PipecatClient } from "@pipecat-ai/client-js";
 import { SmallWebRTCTransport } from "@pipecat-ai/small-webrtc-transport";
 import type { Passage, VoiceEvent } from "./types";
+import { VoiceEventSchema } from "./schemas";
 
 const VOICE_BOT_URL =
   process.env.NEXT_PUBLIC_VOICE_BOT_URL?.replace(/\/$/, "") ||
@@ -316,7 +317,41 @@ export function createLiveVoiceEventSource(
             if (!stopped) callbacks.onStatus?.("disconnected");
           },
           onServerMessage: (data: unknown) => {
-            if (!stopped) onEvent(data as VoiceEvent);
+            if (stopped) return;
+            // Real gap found by audit: this used to trust `data as VoiceEvent`
+            // with zero runtime check, so a payload that drifted from
+            // contracts/voice_events.md (a backend bug, a mid-session
+            // contract change, a stray non-event message on the same data
+            // channel) would flow straight into handleEvent's switch and
+            // either silently no-op on the `default` branch or, worse, hit a
+            // field that doesn't actually exist and throw deep inside a
+            // component. The connection itself is otherwise healthy here
+            // (this isn't a connect/disconnect failure - see onError/
+            // onDisconnected below for that), so the safe response to one bad
+            // message is to log it clearly and drop just that message, not
+            // tear down the whole live session into the mock fallback.
+            const parsed = VoiceEventSchema.safeParse(data);
+            if (!parsed.success) {
+              // console.warn, not console.error: this is a deliberately
+              // tolerated path (see the comment above) - one bad/unrecognized
+              // message gets dropped and the session keeps running. Real bug
+              // found live: Next.js 16 dev mode intercepts console.error
+              // specifically and throws up a blocking red overlay, which
+              // directly undoes the "log clearly and keep going without
+              // disrupting the session" intent this code already had -
+              // Pipecat's own RTVI protocol sends its own internal control
+              // messages over this same data channel (bot-ready, connection
+              // state, etc.) that were never meant to match our 8 custom
+              // event types, so this path fires routinely on a real
+              // connection, not just on a genuine contract drift.
+              console.warn(
+                "[voice] received a server message that failed validation, ignoring it:",
+                parsed.error.issues,
+                data
+              );
+              return;
+            }
+            onEvent(parsed.data);
           },
           onTrackStarted: (track, participant) => {
             // Only the bot's own audio track, never our own mic echoed back
@@ -334,7 +369,16 @@ export function createLiveVoiceEventSource(
       client = pcClient;
 
       pcClient
-        .connect({ connection_url: `${VOICE_BOT_URL}/api/offer?session_id=${sessionId}` })
+        // Real bug found live (see docs/BUILD_LOG.md): this was `connection_url`
+        // (snake_case), which SmallWebRTCTransportConnectionOptions has never
+        // recognized - only `connectionUrl` (deprecated but functional) or
+        // `webrtcRequestParams` (current). The wrong key meant `.connect()`
+        // silently got no real URL at all, so every real-bot attempt failed
+        // regardless of the CORS fix. Using the deprecated-but-still-working
+        // `connectionUrl` key here as the fast, guaranteed-correct fix under
+        // time pressure - migrating to `webrtcRequestParams` is real cleanup
+        // work for later, not blocking on it now.
+        .connect({ connectionUrl: `${VOICE_BOT_URL}/api/offer?session_id=${sessionId}` })
         .catch((err: unknown) => {
           if (!stopped) {
             callbacks.onStatus?.(
