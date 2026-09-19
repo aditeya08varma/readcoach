@@ -184,7 +184,7 @@ Synthetic sessions with known injected errors run through the real code. It repo
 ## Design decisions
 
 - **Live, not batch.** The value is in reacting while the child reads.
-- **Hints after the passage, not mid-sentence.** An early version spoke a hint the moment a stumble happened. Real testing showed it felt like constant interruption. Now every real miscue is taught in one pass after the passage.
+- **Hints after the passage, not mid-sentence.** An early version spoke a hint the moment a stumble happened. When a real child used it, the hints interrupted his reading. Now every real miscue is taught in one pass after the passage, so the child can read in their own flow and stay focused.
 - **Alignment without an LLM.** Deterministic, fast, and testable. The LLM is kept for language tasks.
 - **No fake points, streaks, or leaderboards.** There is one child and one tutor, so a leaderboard has nobody on it. Celebrations come from real mastery.
 - **Separate services.** A voice bot, two APIs, and a web server have different needs, so they run as different processes.
@@ -217,7 +217,7 @@ Run with `python3 run_benchmark.py` from `backend/eval/`. Full detail is in [doc
 
 Stated plainly so nobody has to guess:
 
-- **Not tested with real children.** Streaming speech recognition is known to be less accurate for young voices. The next step is testing with real learners.
+- **Only lightly tested with real learners.** One child used it informally, and that test drove the hints-after-the-passage change. There is no recording, no measurements, and no formal study, and speech recognition accuracy on young voices has not been measured. The next step is a proper test with more learners.
 - **Small content library.** 38 passages across 27 skills, so most skills have one or two. Adaptive selection over a small library is limited.
 - **Synthetic evaluation.** See above.
 - **Self-correction detection is narrow.** It catches a near-miss followed directly by the correct word. A restart or repeated phrase is not counted.
